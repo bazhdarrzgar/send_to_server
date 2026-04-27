@@ -35,11 +35,14 @@ echo "Environment: Using your current active environment"
 echo "------------------------------------------------"
 
 # Run the server using the python3 in your PATH
+# Optimized: Added n_batch and n_ubatch for faster prompt processing
+# Reduced n_ctx to 32768 (32k) to save VRAM and speed up initialization
 python3 -m llama_cpp.server \
     --model "$MODEL_PATH" \
     --host "$HOST" \
     --port "$PORT" \
     --n_gpu_layers "$GPU_LAYERS" \
-    --n_ctx "$CONTEXT_SIZE" \
+    --n_ctx 32768 \
+    --n_batch 2048 \
     --flash_attn True \
     --chat_format gemma

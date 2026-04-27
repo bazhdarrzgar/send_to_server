@@ -6,8 +6,8 @@ from pathlib import Path
 
 # --- Configuration ---
 BASE_DIR = Path(__file__).parent.resolve()
-SERVER_SCRIPT = BASE_DIR / "start_llamacpp_server.sh"
-SERVER_LOG = BASE_DIR / "llamacpp_server_logs.txt"
+SERVER_SCRIPT = BASE_DIR / "start_llamacpp_server_third.sh"
+SERVER_LOG = BASE_DIR / "llamacpp_server_logs_third.txt"
 
 def start_process(command, log_file_handle, description, cwd=None):
     """Starts a process in the background and redirects output to a log file."""
