@@ -5,23 +5,47 @@ REPO_ID="paultimothymooney/gemma-3-27b-it-Q4_K_M-GGUF"
 FILENAME="gemma-3-27b-it-q4_k_m.gguf"
 TARGET_DIR="model_weights"
 
-echo "Downloading Gemma 3 27B GGUF Model..."
-echo "Repo: $REPO_ID"
-echo "File: $FILENAME"
+echo "Downloading Gemma 3 27B GGUF Model using Python API..."
 
 # Create target directory if it doesn't exist
 mkdir -p "$TARGET_DIR"
 
-# Check if huggingface-cli is installed
-if ! command -v huggingface-cli &> /dev/null; then
-    echo "huggingface-cli not found. Installing huggingface_hub..."
-    pip3 install huggingface_hub
+# Use Python to download to ensure compatibility with your environment
+# This avoids CLI deprecation warnings (like the 'hf' tool suggestion)
+python3 -c "
+try:
+    from huggingface_hub import hf_hub_download
+except ImportError:
+    print('huggingface_hub not found. Please run ./install_requirements.sh first.')
+    exit(1)
+
+import os
+
+repo_id = '$REPO_ID'
+filename = '$FILENAME'
+local_dir = '$TARGET_DIR'
+
+print(f'[*] Initializing download: {repo_id}/{filename}')
+try:
+    path = hf_hub_download(
+        repo_id=repo_id, 
+        filename=filename, 
+        local_dir=local_dir,
+        local_dir_use_symlinks=False
+    )
+    print(f'[+] Success! Model saved to: {path}')
+except Exception as e:
+    print(f'[!] Error downloading model: {e}')
+    exit(1)
+"
+
+if [ $? -eq 0 ]; then
+    echo "------------------------------------------------"
+    echo "Model download and verification complete."
+    echo "------------------------------------------------"
+else
+    echo "------------------------------------------------"
+    echo "FAILED: Model download failed."
+    echo "------------------------------------------------"
+    exit 1
 fi
-
-# Download the model file specifically
-# We use local-dir to place it in the model_weights folder
-huggingface-cli download "$REPO_ID" "$FILENAME" --local-dir "$TARGET_DIR" --local-dir-use-symlinks False
-
-echo "------------------------------------------------"
-echo "Model downloaded successfully to $TARGET_DIR/$FILENAME"
-echo "------------------------------------------------"
