@@ -9,6 +9,7 @@ echo "------------------------------------------------"
 
 # Kill llama servers
 pkill -9 -f "llama-server" 2>/dev/null
+pkill -9 -f "llama_cpp" 2>/dev/null
 # Kill background managers
 pkill -9 -f "run_server_bg" 2>/dev/null
 pkill -9 -f "run_generator_bg" 2>/dev/null
