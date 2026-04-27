@@ -5,44 +5,33 @@ export no_proxy="localhost,127.0.0.1,0.0.0.0"
 export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
 
 # Configuration
-# Default model path specified for Gemma 3 27B
 MODEL_PATH="model_weights/gemma-3-27b-it-q4_k_m.gguf"
 HOST="0.0.0.0"
 PORT=8010
-GPU_LAYERS=-1  # -1 means offload all layers to GPU (RTX Pro 6000)
-CONTEXT_SIZE=131072 # Full context size for Gemma 3 (128k)
+GPU_LAYERS=-1 
 
-# Check if model path is provided as an argument (overrides default)
+# Check if model path is provided as an argument
 if [ ! -z "$1" ]; then
     MODEL_PATH="$1"
 fi
 
-# Check if model file exists
 if [ ! -f "$MODEL_PATH" ]; then
     echo "Error: Model file not found at $MODEL_PATH"
-    echo "Please ensure the model path is correct."
     exit 1
 fi
 
 echo "------------------------------------------------"
-echo "Starting llama-cpp-python server..."
+echo "Starting STANDALONE llama-server (Port $PORT)..."
 echo "Model: $MODEL_PATH"
-echo "Host:  $HOST"
-echo "Port:  $PORT"
-echo "GPU:   Offloading all layers ($GPU_LAYERS)"
-echo "Context size: $CONTEXT_SIZE"
-echo "Environment: Using your current active environment"
 echo "------------------------------------------------"
 
-# Run the server using the python3 in your PATH
-# Optimized: Added n_batch and n_ubatch for faster prompt processing
-# Reduced n_ctx to 32768 (32k) to save VRAM and speed up initialization
-python3 -m llama_cpp.server \
-    --model "$MODEL_PATH" \
+# Run the standalone binary (Built via install_llama_binary.sh)
+./llama_cpp_source/build/bin/llama-server \
+    -m "$MODEL_PATH" \
     --host "$HOST" \
     --port "$PORT" \
-    --n_gpu_layers "$GPU_LAYERS" \
-    --n_ctx 32768 \
-    --n_batch 2048 \
-    --flash_attn True \
-    --chat_format gemma
+    -ngl "$GPU_LAYERS" \
+    -c 32768 \
+    -b 2048 \
+    -ub 2048 \
+    --flash-attn

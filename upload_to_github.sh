@@ -18,3 +18,4 @@ git push origin "$BRANCH"
 echo "Done!"
 
 
+./upload_to_github.sh "fix"
