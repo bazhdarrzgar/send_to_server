@@ -3,22 +3,18 @@
 # Exit on error
 set -e
 
-echo "Starting llama-cpp-python installation with CUDA support..."
+echo "Starting llama-cpp-python installation with CUDA support (Anaconda Fix)..."
 
-# 1. Ensure CUDA paths are set correctly (detected from your error log as 12.6)
+# 1. FORCE SYSTEM TOOLCHAIN
+# This prevents Anaconda's 'compiler_compat' from causing "undefined reference" errors
+export CC=/usr/bin/gcc
+export CXX=/usr/bin/g++
+
+# 2. Set CUDA paths (Detected version 12.6)
 export CUDA_HOME=/usr/local/cuda-12.6
 export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-
-if ! command -v nvcc &> /dev/null; then
-    # Fallback to standard path if 12.6 doesn't exist
-    if [ ! -d "/usr/local/cuda-12.6" ]; then
-        echo "CUDA 12.6 not found at /usr/local/cuda-12.6, trying standard /usr/local/cuda..."
-        export CUDA_HOME=/usr/local/cuda
-        export PATH=$CUDA_HOME/bin:$PATH
-        export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-    fi
-fi
+# Prioritize system libraries to fix the libgomp/libpthread issues
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 
 if ! command -v nvcc &> /dev/null; then
     echo "Error: nvcc not found. Please ensure CUDA is installed."
@@ -27,23 +23,21 @@ fi
 
 echo "Found CUDA version: $(nvcc --version | grep release)"
 
-# 2. CONFIGURE BUILD LIMITS (CRITICAL for 16GB RAM systems)
-# Your system has 20 cores. If ninja/make runs 20 jobs, it will use >60GB RAM and crash.
-# We limit to 2 concurrent jobs to fit within your 16GB RAM.
+# 3. CONFIGURE BUILD LIMITS (For 16GB RAM)
 export MAX_JOBS=2
 export CMAKE_BUILD_PARALLEL_LEVEL=2
 
-# 3. Install llama-cpp-python with CUDA support
-echo "Installing llama-cpp-python with MAX_JOBS=$MAX_JOBS..."
+# 4. ENHANCED CMAKE ARGS
+# -DGGML_CUDA=on: Enables GPU
+# CMAKE_EXE_LINKER_FLAGS: Forces linking against system libraries to fix GOMP/pthread errors
+export CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_EXE_LINKER_FLAGS='-L/lib/x86_64-linux-gnu -L/usr/lib/x86_64-linux-gnu'"
 
-# Set CMAKE_ARGS for CUDA offloading
-export CMAKE_ARGS="-DGGML_CUDA=on"
+echo "Installing llama-cpp-python with MAX_JOBS=$MAX_JOBS..."
 
 # Uninstall previous failed attempt to ensure clean build
 pip3 uninstall -y llama-cpp-python
 
-# Install with build from source to ensure CUDA is linked
-# --no-cache-dir ensures we don't reuse a broken partial build
+# Install with build from source and verbose logging
 pip3 install llama-cpp-python[server] --verbose --no-cache-dir
 
 echo "------------------------------------------------"

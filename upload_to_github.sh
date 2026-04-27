@@ -16,3 +16,5 @@ echo "Pushing to GitHub on branch $BRANCH..."
 git push origin "$BRANCH"
 
 echo "Done!"
+
+
