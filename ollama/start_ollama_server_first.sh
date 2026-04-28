@@ -7,6 +7,12 @@
 export no_proxy="localhost,127.0.0.1,0.0.0.0"
 export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
 
+# ── Storage: redirect all Ollama data to the large drive ──────────────────────
+# /home is full; /mnt/storage1/shko/ollama has the free space.
+# OLLAMA_HOME controls where Ollama stores models, blobs, and the ed25519 key.
+export OLLAMA_HOME="/mnt/storage1/shko/ollama"
+mkdir -p "$OLLAMA_HOME"
+
 # Configuration
 MODEL_NAME="gemma3:27b"
 OLLAMA_HOST="0.0.0.0"
@@ -27,6 +33,13 @@ export OLLAMA_HOST="${OLLAMA_HOST}:${OLLAMA_PORT}"
 # If Ollama is running as a systemd service, restart it to pick up env vars
 if systemctl is-active --quiet ollama 2>/dev/null; then
     echo "[*] Ollama systemd service is active — restarting to apply env vars..."
+    # Patch the systemd override so the service also knows about OLLAMA_HOME
+    sudo mkdir -p /etc/systemd/system/ollama.service.d
+    sudo tee /etc/systemd/system/ollama.service.d/storage.conf > /dev/null <<EOF
+[Service]
+Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
+EOF
+    sudo systemctl daemon-reload
     sudo systemctl restart ollama
     sleep 3
 else
