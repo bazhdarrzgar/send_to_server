@@ -15,6 +15,5 @@ git commit -m "$COMMIT_MSG"
 echo "Pushing to GitHub on branch $BRANCH..."
 git push origin "$BRANCH"
 
-echo "Done!"w
-
+echo "Done!"
 
