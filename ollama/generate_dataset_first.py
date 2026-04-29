@@ -50,38 +50,37 @@ def build_prompt(text: str, run_index: int) -> str:
     """
     Build the prompt for a given run.
     """
-    return f"""Act as an expert Kurdish linguist and data engineer.
-Analyze the following text and determine its category (e.g., History, Medical, Mathematics, Technology, Literature, Science, etc.).
-Then, generate high-quality, information-rich question-and-answer pairs based on the text.
+    return f"""You are an expert Kurdish linguist and data engineer.
 
-IMPORTANT: Return a VALID JSON array. Start your response with '[' and end with ']'. 
-Do NOT include any markdown formatting, code fences (```json), or introductory/concluding text.
+Your task: read the source text below and generate question-and-answer pairs in Central Kurdish (Sorani).
 
-Structure:
+OUTPUT FORMAT — CRITICAL RULES:
+1. Your ENTIRE response must be ONLY a raw JSON array.
+2. Do NOT write anything before or after the JSON array.
+3. Do NOT use markdown, code fences, triple backticks, or any other formatting.
+4. The response must start with the character '[' and end with the character ']'.
+5. All text (questions, answers, titles) must be in Central Kurdish (Sorani) only.
+6. Use formal, academic-level language.
+
+Example of the EXACT format to use (fill in real Sorani content):
 [
   {{
     "id": "1",
-    "category": "<category>",
-    "question": "<formal Sorani question>",
-    "response": "<formal Sorani answer>",
+    "category": "Medical",
+    "question": "...",
+    "response": "...",
     "document": {{
-      "title": "<title>",
+      "title": "...",
       "source_url": "",
       "publication_date": ""
     }}
   }}
 ]
 
-Rules:
-- Language: Central Kurdish (Sorani) ONLY.
-- Grammar: Formal and academic level.
-- Format: Output ONLY the raw JSON array.
-
 Source text:
-\"\"\"
 {text}
-\"\"\"
-"""
+
+Remember: respond with ONLY the JSON array, nothing else."""
 
 # ─────────────────────────────── Helpers ──────────────────────────────────────
 
@@ -114,46 +113,74 @@ def call_model(prompt: str) -> str:
 
 def extract_json_array(raw: str) -> list:
     """
-    Attempt to extract a JSON array from the model's raw output.
-    Handles markdown fences, conversational filler, and common JSON errors.
+    Robustly extract a JSON array from the model's raw output.
+    Handles:
+      - markdown code fences (```json ... ```)
+      - preamble / trailing text around the JSON
+      - trailing commas before ] or }
+      - single-object responses (wraps in a list)
     """
     if not raw or not isinstance(raw, str):
         return []
 
-    # 1. Try to find the JSON array block using regex (first '[' to last ']')
-    match = re.search(r"\[\s*\{.*\}\s*\]", raw, re.DOTALL)
-    if match:
-        json_str = match.group()
+    # ── Step 1: strip ALL markdown code fences ────────────────────────────────
+    # e.g.  ```json\n[...]\n```   or   ```\n[...]\n```
+    cleaned = re.sub(r"```(?:json)?\s*", "", raw)
+    cleaned = cleaned.replace("```", "").strip()
+
+    # ── Step 2: find the outermost JSON array by scanning characters ──────────
+    # This is much more reliable than a regex on the raw string because it
+    # handles any amount of preamble text before the '['.
+    start = cleaned.find("[")
+    end   = cleaned.rfind("]")
+
+    if start != -1 and end != -1 and end > start:
+        json_str = cleaned[start : end + 1]
+
+        # Fix trailing commas before } or ] (common LLM mistake)
+        json_str = re.sub(r",\s*([\]}])", r"\1", json_str)
+
         try:
-            return json.loads(json_str)
+            data = json.loads(json_str)
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return [data]
         except json.JSONDecodeError:
-            # Try cleaning common LLM errors like trailing commas before closing braces
-            cleaned = re.sub(r",\s*([\]}])", r"\1", json_str)
-            try:
-                return json.loads(cleaned)
-            except:
-                pass
-
-    # 2. Fallback: Strip markdown fences and whitespace
-    cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
-    
-    # 3. Try to parse whatever is left
-    try:
-        data = json.loads(cleaned)
-        if isinstance(data, list): return data
-        if isinstance(data, dict): return [data]
-    except json.JSONDecodeError:
-        pass
-
-    # 4. Final attempt: look for any [ ... ] even if not perfect
-    match = re.search(r"\[.*\]", raw, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except:
             pass
 
-    print(f"    ⚠  Could not parse JSON. Raw output length: {len(raw)} chars. Saving raw output.")
+    # ── Step 3: maybe the model returned a bare object, not an array ──────────
+    start_obj = cleaned.find("{")
+    end_obj   = cleaned.rfind("}")
+    if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
+        json_str = cleaned[start_obj : end_obj + 1]
+        json_str = re.sub(r",\s*([\]}])", r"\1", json_str)
+        try:
+            data = json.loads(json_str)
+            if isinstance(data, dict):
+                return [data]
+        except json.JSONDecodeError:
+            pass
+
+    # ── Step 4: last resort — try raw_decode to grab whatever JSON is there ───
+    for candidate in (cleaned, raw):
+        for opener in ("[", "{"):
+            idx = candidate.find(opener)
+            if idx == -1:
+                continue
+            try:
+                obj, _ = json.JSONDecoder().raw_decode(candidate, idx)
+                if isinstance(obj, list):
+                    return obj
+                if isinstance(obj, dict):
+                    return [obj]
+            except json.JSONDecodeError:
+                pass
+
+    # ── Nothing worked — log a useful snippet so you can debug ────────────────
+    snippet = raw[:300].replace("\n", " ")
+    print(f"    ⚠️  Could not parse JSON from model output. Saving raw output for inspection.")
+    print(f"    📋 First 300 chars: {snippet!r}")
     return []
 
 
