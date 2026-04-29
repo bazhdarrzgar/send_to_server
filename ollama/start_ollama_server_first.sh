@@ -7,12 +7,24 @@
 export no_proxy="localhost,127.0.0.1,0.0.0.0"
 export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
 
-# ── Storage: redirect all Ollama data to the large drive ──────────────────────
-# /home is full; /mnt/storage1/shko/ollama has the free space.
-# OLLAMA_HOME controls where Ollama stores models, blobs, and the ed25519 key.
-export OLLAMA_HOME="/mnt/storage1/shko/ollama"
-export OLLAMA_MODELS="$OLLAMA_HOME/models"
-mkdir -p "$OLLAMA_MODELS"
+# ── Smart Storage Fix ────────────────────────────────────────────────────────
+# Redirects the default ~/.ollama to the large drive so models are ALWAYS found
+# regardless of how Ollama is started.
+REAL_STORAGE="/mnt/storage1/shko/ollama"
+mkdir -p "$REAL_STORAGE"
+
+if [ ! -L "$HOME/.ollama" ]; then
+    echo "[*] Smart Fix: Linking ~/.ollama to large drive ($REAL_STORAGE)..."
+    # If a real directory exists, move contents safely then replace with link
+    if [ -d "$HOME/.ollama" ] && [ ! -L "$HOME/.ollama" ]; then
+        cp -rn "$HOME/.ollama/"* "$REAL_STORAGE/" 2>/dev/null || true
+        rm -rf "$HOME/.ollama"
+    fi
+    ln -sf "$REAL_STORAGE" "$HOME/.ollama"
+fi
+
+export OLLAMA_HOME="$REAL_STORAGE"
+export OLLAMA_MODELS="$REAL_STORAGE/models"
 
 # Configuration
 MODEL_NAME="gemma3:27b"
@@ -23,6 +35,7 @@ OLLAMA_PORT=11434
 export CUDA_VISIBLE_DEVICES=0,1
 export OLLAMA_NUM_PARALLEL=2
 export OLLAMA_MAX_LOADED_MODELS=1
+export OLLAMA_SCHED_SPREAD=true
 export OLLAMA_HOST="${OLLAMA_HOST}:${OLLAMA_PORT}"
 
 echo "------------------------------------------------"
@@ -45,6 +58,7 @@ Environment="OLLAMA_MODELS=$OLLAMA_MODELS"
 Environment="CUDA_VISIBLE_DEVICES=0,1"
 Environment="OLLAMA_NUM_PARALLEL=2"
 Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_SCHED_SPREAD=true"
 Environment="OLLAMA_HOST=$OLLAMA_HOST"
 EOF
     sudo systemctl daemon-reload
