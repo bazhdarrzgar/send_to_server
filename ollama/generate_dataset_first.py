@@ -50,37 +50,38 @@ def build_prompt(text: str, run_index: int) -> str:
     """
     Build the prompt for a given run.
     """
-    return f"""You are an expert Kurdish linguist and data engineer.
+    return f"""Act as an expert Kurdish linguist and data engineer.
+Analyze the following text and determine its category (e.g., History, Medical, Mathematics, Technology, Literature, Science, etc.).
+Then, generate high-quality, information-rich question-and-answer pairs based on the text.
 
-Your task: read the source text below and generate question-and-answer pairs in Central Kurdish (Sorani).
+IMPORTANT: Return a VALID JSON array. Start your response with '[' and end with ']'. 
+Do NOT include any markdown formatting, code fences (```json), or introductory/concluding text.
 
-OUTPUT FORMAT — CRITICAL RULES:
-1. Your ENTIRE response must be ONLY a raw JSON array.
-2. Do NOT write anything before or after the JSON array.
-3. Do NOT use markdown, code fences, triple backticks, or any other formatting.
-4. The response must start with the character '[' and end with the character ']'.
-5. All text (questions, answers, titles) must be in Central Kurdish (Sorani) only.
-6. Use formal, academic-level language.
-
-Example of the EXACT format to use (fill in real Sorani content):
+Structure:
 [
   {{
     "id": "1",
-    "category": "Medical",
-    "question": "...",
-    "response": "...",
+    "category": "<category>",
+    "question": "<formal Sorani question>",
+    "response": "<formal Sorani answer>",
     "document": {{
-      "title": "...",
+      "title": "<title>",
       "source_url": "",
       "publication_date": ""
     }}
   }}
 ]
 
-Source text:
-{text}
+Rules:
+- Language: Central Kurdish (Sorani) ONLY.
+- Grammar: Formal and academic level.
+- Format: Output ONLY the raw JSON array.
 
-Remember: respond with ONLY the JSON array, nothing else."""
+Source text:
+\"\"\"
+{text}
+\"\"\"
+"""
 
 # ─────────────────────────────── Helpers ──────────────────────────────────────
 
@@ -113,12 +114,8 @@ def call_model(prompt: str) -> str:
 
 def extract_json_array(raw: str) -> list:
     """
-    Robustly extract a JSON array from the model's raw output.
-    Handles:
-      - markdown code fences (```json ... ```)
-      - preamble / trailing text around the JSON
-      - trailing commas before ] or }
-      - single-object responses (wraps in a list)
+    Attempt to extract a JSON array from the model's raw output.
+    Handles markdown fences, conversational filler, and common JSON errors.
     """
     if not raw or not isinstance(raw, str):
         return []

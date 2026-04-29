@@ -9,9 +9,12 @@ export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
 
 # ── Storage: redirect all Ollama data to the large drive ──────────────────────
 # /home is full; /mnt/storage1/shko/ollama has the free space.
-# OLLAMA_HOME controls where Ollama stores models, blobs, and the ed25519 key.
+# OLLAMA_HOME  controls where Ollama stores its config and ed25519 key.
+# OLLAMA_MODELS controls where model blobs (the actual weights) are stored.
 export OLLAMA_HOME="/mnt/storage1/shko/ollama"
+export OLLAMA_MODELS="/mnt/storage1/shko/ollama/Models"
 mkdir -p "$OLLAMA_HOME"
+mkdir -p "$OLLAMA_MODELS"
 
 # Context window: allow up to 32 K tokens for both input and output
 export OLLAMA_NUM_CTX=32768
@@ -41,6 +44,7 @@ if systemctl is-active --quiet ollama 2>/dev/null; then
     sudo tee /etc/systemd/system/ollama.service.d/storage.conf > /dev/null <<EOF
 [Service]
 Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
+Environment="OLLAMA_MODELS=/mnt/storage1/shko/ollama/Models"
 EOF
     sudo systemctl daemon-reload
     sudo systemctl restart ollama

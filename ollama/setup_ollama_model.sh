@@ -14,7 +14,9 @@ set -e
 
 # ── Storage ────────────────────────────────────────────────────────────────────
 export OLLAMA_HOME="/mnt/storage1/shko/ollama"
+export OLLAMA_MODELS="/mnt/storage1/shko/ollama/Models"
 mkdir -p "$OLLAMA_HOME"
+mkdir -p "$OLLAMA_MODELS"
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,9 +26,10 @@ MODELFILE="$SCRIPT_DIR/Modelfile"
 
 echo "================================================"
 echo "  Ollama Model Setup (local GGUF import)"
-echo "  Model : $MODEL_NAME"
-echo "  GGUF  : $GGUF_FILE"
-echo "  Store : $OLLAMA_HOME"
+echo "  Model  : $MODEL_NAME"
+echo "  GGUF   : $GGUF_FILE"
+echo "  Home   : $OLLAMA_HOME"
+echo "  Models : $OLLAMA_MODELS"
 echo "================================================"
 
 # ── Sanity checks ──────────────────────────────────────────────────────────────
@@ -75,17 +78,17 @@ echo "[*] Running: ollama create $MODEL_NAME -f $MODELFILE"
 echo "    This copies the GGUF into Ollama's blob store — may take a minute..."
 echo ""
 
-OLLAMA_HOME="$OLLAMA_HOME" ollama create "$MODEL_NAME" -f "$MODELFILE"
+OLLAMA_HOME="$OLLAMA_HOME" OLLAMA_MODELS="$OLLAMA_MODELS" ollama create "$MODEL_NAME" -f "$MODELFILE"
 
 echo ""
 echo "================================================"
 echo "  SUCCESS! Model is ready."
 echo ""
 echo "  Quick test:"
-echo "    OLLAMA_HOME=$OLLAMA_HOME ollama run $MODEL_NAME \"Hello!\""
+echo "    OLLAMA_HOME=$OLLAMA_HOME OLLAMA_MODELS=$OLLAMA_MODELS ollama run $MODEL_NAME \"Hello!\""
 echo ""
 echo "  List registered models:"
-echo "    OLLAMA_HOME=$OLLAMA_HOME ollama list"
+echo "    OLLAMA_HOME=$OLLAMA_HOME OLLAMA_MODELS=$OLLAMA_MODELS ollama list"
 echo ""
 echo "  The model is now registered as: $MODEL_NAME"
 echo "  Start the server with: python3 run_server_bg_first.py"
