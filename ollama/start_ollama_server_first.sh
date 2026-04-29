@@ -9,37 +9,35 @@ export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
 
 # ── Storage: redirect all Ollama data to the large drive ──────────────────────
 # /home is full; /mnt/storage1/shko/ollama has the free space.
-# OLLAMA_HOME controls where Ollama stores models, blobs, and the ed25519 key.
 export OLLAMA_HOME="/mnt/storage1/shko/ollama"
-mkdir -p "$OLLAMA_HOME"
+export OLLAMA_MODELS="$OLLAMA_HOME/models"
+mkdir -p "$OLLAMA_MODELS"
 
 # Configuration
 MODEL_NAME="gemma3:27b"
 OLLAMA_HOST="0.0.0.0"
 OLLAMA_PORT=11434
 
-echo "------------------------------------------------"
-echo "  Starting / checking Ollama server"
-echo "  Model : $MODEL_NAME"
-echo "  Host  : $OLLAMA_HOST"
-echo "  Port  : $OLLAMA_PORT"
-echo "  GPUs  : Both RTX 4090 D (CUDA_VISIBLE_DEVICES=0,1)"
-echo "------------------------------------------------"
-
-# Export so the Ollama process uses both GPUs
+# Performance and GPU Settings
 export CUDA_VISIBLE_DEVICES=0,1
+export OLLAMA_NUM_PARALLEL=2
+export OLLAMA_MAX_LOADED_MODELS=1
+
+# Finalize host
 export OLLAMA_HOST="${OLLAMA_HOST}:${OLLAMA_PORT}"
 
 # If Ollama is running as a systemd service, restart it to pick up env vars
 if systemctl is-active --quiet ollama 2>/dev/null; then
     echo "[*] Ollama systemd service is active — restarting to apply env vars..."
-    # Patch the systemd override so the service also knows about OLLAMA_HOME
+    # Patch the systemd override so the service also knows about storage and performance
     sudo mkdir -p /etc/systemd/system/ollama.service.d
     sudo tee /etc/systemd/system/ollama.service.d/storage.conf > /dev/null <<EOF
 [Service]
-Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
+Environment="OLLAMA_HOME=$OLLAMA_HOME"
+Environment="OLLAMA_MODELS=$OLLAMA_MODELS"
 Environment="CUDA_VISIBLE_DEVICES=0,1"
 Environment="OLLAMA_NUM_PARALLEL=2"
+Environment="OLLAMA_HOST=$OLLAMA_HOST"
 EOF
     sudo systemctl daemon-reload
     sudo systemctl restart ollama
@@ -47,6 +45,7 @@ EOF
 else
     # Otherwise start it as a foreground process (useful when running manually)
     echo "[*] Starting Ollama serve in the foreground..."
+    # Ensure OLLAMA_MODELS is explicitly set for the exec process
     exec ollama serve
 fi
 
