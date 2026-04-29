@@ -60,12 +60,12 @@ Return a valid JSON array where EVERY object has exactly this structure:
   "category": "<identified category name (e.g., History, Medical, Mathematics, Technology, Literature, Science, etc.)>",
   "question": "<question in Central Kurdish (Sorani) — formal, academic level>",
   "response": "<detailed answer in Central Kurdish (Sorani) — formal, academic level>",
-  "document": {{
+    "document": {{
     "title": "<title of the document if identifiable, else empty string>",
     "source_url": "<URL if present in the text, else empty string>",
     "publication_date": "<date if present in the text, else empty string>"
+    }}
   }}
-}}
 
 Rules:
 - Category: Identify the category accurately from the text.
@@ -113,33 +113,45 @@ def call_model(prompt: str) -> str:
 def extract_json_array(raw: str) -> list:
     """
     Attempt to extract a JSON array from the model's raw output.
-    The model is instructed to return only JSON, but sometimes wraps it in
-    markdown fences — this strips those and tries multiple fallback strategies.
+    Handles markdown fences, conversational filler, and common JSON errors.
     """
-    # Strip markdown code fences
-    cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
+    if not raw or not isinstance(raw, str):
+        return []
 
-    # Try parsing directly
+    # 1. Try to find the JSON array block using regex (first '[' to last ']')
+    match = re.search(r"\[\s*\{.*\}\s*\]", raw, re.DOTALL)
+    if match:
+        json_str = match.group()
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            # Try cleaning common LLM errors like trailing commas before closing braces
+            cleaned = re.sub(r",\s*([\]}])", r"\1", json_str)
+            try:
+                return json.loads(cleaned)
+            except:
+                pass
+
+    # 2. Fallback: Strip markdown fences and whitespace
+    cleaned = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
+    
+    # 3. Try to parse whatever is left
     try:
         data = json.loads(cleaned)
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            return [data]
+        if isinstance(data, list): return data
+        if isinstance(data, dict): return [data]
     except json.JSONDecodeError:
         pass
 
-    # Try to find the first [...] block
-    match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+    # 4. Final attempt: look for any [ ... ] even if not perfect
+    match = re.search(r"\[.*\]", raw, re.DOTALL)
     if match:
         try:
-            data = json.loads(match.group())
-            if isinstance(data, list):
-                return data
-        except json.JSONDecodeError:
+            return json.loads(match.group())
+        except:
             pass
 
-    print("    ⚠  Could not parse JSON from model output. Saving raw output for inspection.")
+    print(f"    ⚠  Could not parse JSON. Raw output length: {len(raw)} chars. Saving raw output.")
     return []
 
 

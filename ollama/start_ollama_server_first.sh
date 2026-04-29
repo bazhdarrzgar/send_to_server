@@ -38,6 +38,8 @@ if systemctl is-active --quiet ollama 2>/dev/null; then
     sudo tee /etc/systemd/system/ollama.service.d/storage.conf > /dev/null <<EOF
 [Service]
 Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
+Environment="CUDA_VISIBLE_DEVICES=0,1"
+Environment="OLLAMA_NUM_PARALLEL=2"
 EOF
     sudo systemctl daemon-reload
     sudo systemctl restart ollama
