@@ -54,26 +54,28 @@ def build_prompt(text: str, run_index: int) -> str:
 Analyze the following text and determine its category (e.g., History, Medical, Mathematics, Technology, Literature, Science, etc.).
 Then, generate high-quality, information-rich question-and-answer pairs based on the text.
 
-Return a valid JSON array where EVERY object has exactly this structure:
-{{
-  "id": "<unique uuid or sequential string>",
-  "category": "<identified category name (e.g., History, Medical, Mathematics, Technology, Literature, Science, etc.)>",
-  "question": "<question in Central Kurdish (Sorani) — formal, academic level>",
-  "response": "<detailed answer in Central Kurdish (Sorani) — formal, academic level>",
+IMPORTANT: Return a VALID JSON array. Start your response with '[' and end with ']'. 
+Do NOT include any markdown formatting, code fences (```json), or introductory/concluding text.
+
+Structure:
+[
+  {{
+    "id": "1",
+    "category": "<category>",
+    "question": "<formal Sorani question>",
+    "response": "<formal Sorani answer>",
     "document": {{
-    "title": "<title of the document if identifiable, else empty string>",
-    "source_url": "<URL if present in the text, else empty string>",
-    "publication_date": "<date if present in the text, else empty string>"
+      "title": "<title>",
+      "source_url": "",
+      "publication_date": ""
     }}
   }}
+]
 
 Rules:
-- Category: Identify the category accurately from the text.
-- Language: Central Kurdish (Sorani) ONLY. Perfect grammar and spelling.
-- Grammar: Formal and academic level. Correct any errors or colloquialisms from the source.
-- Content: Extract ALL information from the document. Do NOT skip or omit any facts.
-- Variety: Produce different types of questions (factual, analytical, comparative, definitional…).
-- Format: Output ONLY the JSON array — no explanation, no markdown fences, no extra text.
+- Language: Central Kurdish (Sorani) ONLY.
+- Grammar: Formal and academic level.
+- Format: Output ONLY the raw JSON array.
 
 Source text:
 \"\"\"
