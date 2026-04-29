@@ -38,7 +38,6 @@ if systemctl is-active --quiet ollama 2>/dev/null; then
     sudo tee /etc/systemd/system/ollama.service.d/storage.conf > /dev/null <<EOF
 [Service]
 Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
-Environment="CUDA_VISIBLE_DEVICES=0,1"
 EOF
     sudo systemctl daemon-reload
     sudo systemctl restart ollama
@@ -62,7 +61,7 @@ done
 
 # Configure the model to use a 32K context window (32768 tokens)
 echo "[*] Configuring $MODEL_NAME with 32K context window..."
-printf "FROM $MODEL_NAME\nPARAMETER num_ctx 32768\nPARAMETER num_gpu 100\n" | ollama create "$MODEL_NAME" -f -
+printf "FROM $MODEL_NAME\nPARAMETER num_ctx 32768\n" | ollama create "$MODEL_NAME" -f -
 
 # Pre-load the model so the first inference call is instant
 echo "[*] Pre-loading model $MODEL_NAME into GPU VRAM..."
