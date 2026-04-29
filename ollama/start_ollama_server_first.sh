@@ -13,6 +13,9 @@ export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
 export OLLAMA_HOME="/mnt/storage1/shko/ollama"
 mkdir -p "$OLLAMA_HOME"
 
+# Context window: allow up to 32 K tokens for both input and output
+export OLLAMA_NUM_CTX=32768
+
 # Configuration
 MODEL_NAME="gemma3:27b"
 OLLAMA_HOST="0.0.0.0"
@@ -58,10 +61,6 @@ for i in $(seq 1 30); do
     echo "    ... attempt $i/30"
     sleep 2
 done
-
-# Configure the model to use a 32K context window (32768 tokens)
-echo "[*] Configuring $MODEL_NAME with 32K context window..."
-printf "FROM $MODEL_NAME\nPARAMETER num_ctx 32768\n" | ollama create "$MODEL_NAME" -f -
 
 # Pre-load the model so the first inference call is instant
 echo "[*] Pre-loading model $MODEL_NAME into GPU VRAM..."
