@@ -7,37 +7,16 @@
 export no_proxy="localhost,127.0.0.1,0.0.0.0"
 export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
 
-# ── Smart Storage Fix ────────────────────────────────────────────────────────
-# Redirects the default ~/.ollama to the large drive so models are ALWAYS found
-# regardless of how Ollama is started.
-REAL_STORAGE="/mnt/storage1/shko/ollama"
-mkdir -p "$REAL_STORAGE"
-
-if [ ! -L "$HOME/.ollama" ]; then
-    echo "[*] Smart Fix: Linking ~/.ollama to large drive ($REAL_STORAGE)..."
-    # If a real directory exists, move contents safely then replace with link
-    if [ -d "$HOME/.ollama" ] && [ ! -L "$HOME/.ollama" ]; then
-        cp -rn "$HOME/.ollama/"* "$REAL_STORAGE/" 2>/dev/null || true
-        rm -rf "$HOME/.ollama"
-    fi
-    ln -sf "$REAL_STORAGE" "$HOME/.ollama"
-fi
-
-export OLLAMA_HOME="$REAL_STORAGE"
-export OLLAMA_MODELS="$REAL_STORAGE/models"
+# ── Storage: redirect all Ollama data to the large drive ──────────────────────
+# /home is full; /mnt/storage1/shko/ollama has the free space.
+# OLLAMA_HOME controls where Ollama stores models, blobs, and the ed25519 key.
+export OLLAMA_HOME="/mnt/storage1/shko/ollama"
+mkdir -p "$OLLAMA_HOME"
 
 # Configuration
 MODEL_NAME="gemma3:27b"
 OLLAMA_HOST="0.0.0.0"
 OLLAMA_PORT=11434
-
-# Performance and GPU Settings
-export CUDA_VISIBLE_DEVICES=0,1
-export OLLAMA_NUM_PARALLEL=2
-export OLLAMA_MAX_LOADED_MODELS=1
-export OLLAMA_NUM_CTX=32768
-export OLLAMA_SCHED_SPREAD=true
-export OLLAMA_HOST="${OLLAMA_HOST}:${OLLAMA_PORT}"
 
 echo "------------------------------------------------"
 echo "  Starting / checking Ollama server"
@@ -47,6 +26,10 @@ echo "  Port  : $OLLAMA_PORT"
 echo "  GPUs  : Both RTX 4090 D (CUDA_VISIBLE_DEVICES=0,1)"
 echo "------------------------------------------------"
 
+# Export so the Ollama process uses both GPUs
+export CUDA_VISIBLE_DEVICES=0,1
+export OLLAMA_HOST="${OLLAMA_HOST}:${OLLAMA_PORT}"
+
 # If Ollama is running as a systemd service, restart it to pick up env vars
 if systemctl is-active --quiet ollama 2>/dev/null; then
     echo "[*] Ollama systemd service is active — restarting to apply env vars..."
@@ -54,14 +37,8 @@ if systemctl is-active --quiet ollama 2>/dev/null; then
     sudo mkdir -p /etc/systemd/system/ollama.service.d
     sudo tee /etc/systemd/system/ollama.service.d/storage.conf > /dev/null <<EOF
 [Service]
-Environment="OLLAMA_HOME=$OLLAMA_HOME"
-Environment="OLLAMA_MODELS=$OLLAMA_MODELS"
+Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
 Environment="CUDA_VISIBLE_DEVICES=0,1"
-Environment="OLLAMA_NUM_PARALLEL=2"
-Environment="OLLAMA_MAX_LOADED_MODELS=1"
-Environment="OLLAMA_NUM_CTX=32768"
-Environment="OLLAMA_SCHED_SPREAD=true"
-Environment="OLLAMA_HOST=$OLLAMA_HOST"
 EOF
     sudo systemctl daemon-reload
     sudo systemctl restart ollama
@@ -82,6 +59,10 @@ for i in $(seq 1 30); do
     echo "    ... attempt $i/30"
     sleep 2
 done
+
+# Configure the model to use a 32K context window (32768 tokens)
+echo "[*] Configuring $MODEL_NAME with 32K context window..."
+printf "FROM $MODEL_NAME\nPARAMETER num_ctx 32768\nPARAMETER num_gpu 100\n" | ollama create "$MODEL_NAME" -f -
 
 # Pre-load the model so the first inference call is instant
 echo "[*] Pre-loading model $MODEL_NAME into GPU VRAM..."
