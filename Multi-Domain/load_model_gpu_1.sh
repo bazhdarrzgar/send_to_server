@@ -11,9 +11,9 @@
 # --- Configuration ---
 # You can change these variables to match your environment
 MODEL_NAME="gemma3:27b"
-LOG_FILE="ollama_gpu_load.txt"
+LOG_FILE="ollama_gpu_1_load.txt"
 GPU_ID=1  # The index of the GPU to use
-OLLAMA_PORT=11434
+OLLAMA_PORT=11435
 
 # ANSI Color Codes for Premium UI
 GREEN='\033[0;32m'
@@ -45,10 +45,10 @@ ensure_server_running() {
     echo -e "${YELLOW}[!] Ollama server not detected. Attempting to start...${NC}"
     
     # Check if the user's custom start script exists in the same directory
-    if [ -f "./start_ollama_server_first.sh" ]; then
-        echo -e "${CYAN}[i] Found 'start_ollama_server_first.sh'. Using it to initialize...${NC}"
+    if [ -f "./start_ollama_server_second.sh" ]; then
+        echo -e "${CYAN}[i] Found 'start_ollama_server_second.sh'. Using it to initialize...${NC}"
         # Run in background
-        nohup bash ./start_ollama_server_first.sh >> "$LOG_FILE" 2>&1 &
+        nohup bash ./start_ollama_server_second.sh >> "$LOG_FILE" 2>&1 &
     else
         echo -e "${CYAN}[i] No start script found. Running 'ollama serve' directly...${NC}"
         # Set basic environment just in case
@@ -76,8 +76,9 @@ load_to_gpu_bg() {
     echo -e "${YELLOW}[*] Action: Loading '$MODEL_NAME' to GPU $GPU_ID in background...${NC}"
     
     # Trigger loading using 'ollama run' with an empty input
-    # Redirecting to log file and backgrounding the process
-    nohup bash -c "export CUDA_VISIBLE_DEVICES=$GPU_ID; ollama run $MODEL_NAME ''" >> "$LOG_FILE" 2>&1 &
+    # We must set OLLAMA_HOST to talk to the correct port (11435)
+    export OLLAMA_HOST="localhost:$OLLAMA_PORT"
+    nohup bash -c "export CUDA_VISIBLE_DEVICES=$GPU_ID; export OLLAMA_HOST=localhost:$OLLAMA_PORT; ollama run $MODEL_NAME ''" >> "$LOG_FILE" 2>&1 &
     
     BG_PID=$!
     echo -e "${GREEN}[+] Load process dispatched (PID: $BG_PID).${NC}" | tee -a "$LOG_FILE"
@@ -95,8 +96,8 @@ run_verification_test() {
     
     for ((i=1; i<=MAX_ATTEMPTS; i++)); do
         echo -n "."
-        # 'ollama ps' shows models currently loaded in memory
-        if ollama ps 2>/dev/null | grep -q "$MODEL_NAME"; then
+        # Check 'ollama ps' on the specific host/port
+        if OLLAMA_HOST="localhost:$OLLAMA_PORT" ollama ps 2>/dev/null | grep -q "$MODEL_NAME"; then
             echo -e "\n${GREEN}${BOLD}[SUCCESS] Model '$MODEL_NAME' is active in GPU memory!${NC}" | tee -a "$LOG_FILE"
             SUCCESS=true
             break
@@ -106,8 +107,8 @@ run_verification_test() {
 
     if [ "$SUCCESS" = true ]; then
         echo -e "${BLUE}------------------------------------------------------${NC}"
-        echo -e "${BOLD}Current GPU Load Status:${NC}"
-        ollama ps | grep -E "NAME|${MODEL_NAME}"
+        echo -e "${BOLD}Current GPU Load Status (Port $OLLAMA_PORT):${NC}"
+        OLLAMA_HOST="localhost:$OLLAMA_PORT" ollama ps | grep -E "NAME|${MODEL_NAME}"
         echo -e "${BLUE}------------------------------------------------------${NC}"
         return 0
     else
