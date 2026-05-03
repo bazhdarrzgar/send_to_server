@@ -1,0 +1,928 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+% Core packages
+\usepackage{amsmath,amssymb}
+\usepackage{array,longtable,booktabs}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+
+% Define colors for code
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+% Python style
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=4
+}
+
+% Bash style
+\lstdefinestyle{bashstyle}{
+    language=bash,
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=4
+}
+
+% Plain text style for Markdown
+\lstdefinestyle{textstyle}{
+    backgroundcolor=\color{backcolour},   
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=4
+}
+
+\lstset{
+    literate=
+        {—}{{\textemdash}}1
+        {🛑}{{[STOP]}}1
+        {✅}{{[OK]}}1
+}
+
+\title{Kurdish Medical Dataset Generation with Ollama}
+\author{Research Implementation}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Original Request and System Information (prompt.md)}
+{\small
+\renewcommand{\arraystretch}{1.2}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth}>{\raggedright\arraybackslash}p{0.64\textwidth}@{}}
+\caption{Structured summary of \texttt{prompt.md}} \\
+\toprule
+\textbf{Item} & \textbf{Details} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Item} & \textbf{Details} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\bottomrule
+\endlastfoot
+\multicolumn{2}{@{}l}{\textbf{Original Request}} \\
+\midrule
+Requested change & change this code from llamacpp to ollama for installation and running start the server and even file name \\
+Testing constraint & pleases don't run any code for test in my machine because i copy this file to my server just write the code and i will run it in my server this information about my server in below \\
+Model note & also i alreaded downloaded gemma 3 27 b \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textbf{Operating System \& Kernel}} \\
+\midrule
+System & Linux \\
+Node Name & a214-Z790-D \\
+Release & 5.15.0-139-generic \\
+Version & \#149\textasciitilde{}20.04.1-Ubuntu SMP Wed Apr 16 08:29:56 UTC 2025 \\
+Machine & x86\_64 \\
+Processor & x86\_64 \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textbf{CPU Information}} \\
+\midrule
+Physical cores & 14 \\
+Total cores & 20 \\
+Max Frequency & 4620.00~MHz \\
+Current Frequency & 3257.71~MHz \\
+CPU Usage & 4.4\% \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textbf{GPU Information}} \\
+\midrule
+GPU 0 & NVIDIA GeForce RTX 4090 D, Load: 0.0\%, Free Mem: 48123.0~MB, Used Mem: 405.0~MB, Total Mem: 49140.0~MB, Temperature: 32.0~$^\circ$C \\
+GPU 1 & NVIDIA GeForce RTX 4090 D, Load: 0.0\%, Free Mem: 48511.0~MB, Used Mem: 25.0~MB, Total Mem: 49140.0~MB, Temperature: 29.0~$^\circ$C \\
+\addlinespace
+\multicolumn{2}{@{}l}{\textbf{Memory Information}} \\
+\midrule
+Total & 15.44~GB \\
+Available & 11.40~GB \\
+Used & 4.04~GB \\
+Percentage & 26.2\% \\
+\end{longtable}
+}
+
+\newpage
+\section{Installation Scripts}
+
+\subsection{install\_ollama.sh}
+\begin{lstlisting}[style=bashstyle, caption={install\_ollama.sh}]
+#!/bin/bash
+# install_ollama.sh - Install Ollama on Ubuntu (CUDA/GPU enabled)
+set -e
+
+echo "================================================"
+echo "  Ollama Installation Script"
+echo "  Target: Ubuntu 20.04 | Dual RTX 4090 D"
+echo "================================================"
+
+# 1. Install CURL if not present
+echo "[*] Ensuring curl is installed..."
+sudo apt-get update -y
+sudo apt-get install -y curl
+
+# 2. Remove any existing Ollama installation before reinstalling
+echo ""
+echo "[*] Checking for existing Ollama installation..."
+OLLAMA_BIN=$(command -v ollama || echo "/usr/local/bin/ollama")
+
+if [ -f "$OLLAMA_BIN" ] || systemctl list-unit-files | grep -q ollama.service; then
+    echo "[!] Ollama installation detected — removing it completely for a clean reinstall..."
+
+    # Stop and disable the service
+    sudo systemctl stop ollama 2>/dev/null || true
+    sudo systemctl disable ollama 2>/dev/null || true
+
+    # Remove the binary
+    if [ -f "$OLLAMA_BIN" ]; then
+        sudo rm -f "$OLLAMA_BIN"
+        echo "    [v] Binary removed ($OLLAMA_BIN)"
+    fi
+    # Also check /usr/bin just in case
+    sudo rm -f /usr/bin/ollama
+
+    # Remove the systemd unit and any drop-in overrides
+    sudo rm -f /etc/systemd/system/ollama.service
+    sudo rm -rf /etc/systemd/system/ollama.service.d
+    sudo systemctl daemon-reload
+    echo "    [v] Systemd unit and overrides removed"
+
+    # Remove system data directory (libraries/runners)
+    if [ -d /usr/share/ollama ]; then
+        sudo rm -rf /usr/share/ollama
+        echo "    [v] System data directory /usr/share/ollama removed"
+    fi
+
+    # Remove the ollama system user/group
+    if id -u ollama &>/dev/null; then
+        sudo userdel ollama 2>/dev/null || true
+        echo "    [v] System user 'ollama' removed"
+    fi
+    if getent group ollama &>/dev/null; then
+        sudo groupdel ollama 2>/dev/null || true
+        echo "    [v] System group 'ollama' removed"
+    fi
+
+    echo "[+] Old Ollama installation removed."
+else
+    echo "[+] No existing Ollama installation found — proceeding with fresh install."
+fi
+echo ""
+
+# 3. Fresh Ollama install (automatically detects CUDA and installs GPU support)
+echo "[*] Running official Ollama installer..."
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 3. Configure Ollama storage on the large drive (/home is full)
+echo "[*] Creating Ollama storage directory on /mnt/storage1/shko/ollama ..."
+export OLLAMA_HOME="/mnt/storage1/shko/ollama"
+sudo mkdir -p "$OLLAMA_HOME"
+# Make the directory owned by the user that will run ollama
+sudo chown -R "$USER":"$USER" "$OLLAMA_HOME"
+
+# 4. Configure Ollama to listen on all interfaces (so the Python client can reach it)
+echo "[*] Configuring Ollama systemd service (host, GPUs, storage)..."
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+cat <<EOF | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+# Use both GPUs
+Environment="CUDA_VISIBLE_DEVICES=0,1"
+# Store all Ollama data (models, blobs, keys) on the large drive
+Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
+EOF
+
+# 5. Reload systemd and start the Ollama service
+echo "[*] Enabling and starting Ollama service..."
+sudo systemctl daemon-reload
+sudo systemctl enable ollama
+sudo systemctl restart ollama
+
+echo ""
+echo "================================================"
+echo "  SUCCESS! Ollama is installed and running."
+echo "  Service status: sudo systemctl status ollama"
+echo "  API endpoint  : http://localhost:11434"
+echo "================================================"
+echo ""
+echo "  NEXT STEPS:"
+echo "  1. Run ./setup_ollama_model.sh    <- registers Gemma 3 27B"
+echo "  2. Run python3 run_server_bg_first.py  <- starts the generator"
+echo "================================================"
+\end{lstlisting}
+
+\newpage
+\subsection{setup\_ollama\_model.sh}
+\begin{lstlisting}[style=bashstyle, caption={setup\_ollama\_model.sh}]
+#!/bin/bash
+# setup_ollama_model.sh - Register the local Gemma 3 27B GGUF with Ollama
+# Run this AFTER install_ollama.sh
+#
+# The model weight file is expected at:
+#   model_weights/gemma-3-27b-it-q4_k_m.gguf
+# (relative to THIS script's directory, i.e. the directory you uploaded to the server)
+#
+# Ollama's "create" command reads a Modelfile, imports the GGUF blob into its
+# internal content-addressed store, and registers it as "gemma3:27b".
+# After this runs, "ollama run gemma3:27b" works offline — no internet needed.
+
+set -e
+
+# -- Storage --------------------------------------------------------------------
+export OLLAMA_HOME="/mnt/storage1/shko/ollama"
+export OLLAMA_MODELS="/mnt/storage1/shko/ollama/Models"
+mkdir -p "$OLLAMA_HOME"
+mkdir -p "$OLLAMA_MODELS"
+
+# -- Paths ----------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GGUF_FILE="$SCRIPT_DIR/model_weights/gemma-3-27b-it-q4_k_m.gguf"
+MODEL_NAME="gemma3:27b"
+MODELFILE="$SCRIPT_DIR/Modelfile"
+
+echo "================================================"
+echo "  Ollama Model Setup (local GGUF import)"
+echo "  Model  : $MODEL_NAME"
+echo "  GGUF   : $GGUF_FILE"
+echo "  Home   : $OLLAMA_HOME"
+echo "  Models : $OLLAMA_MODELS"
+echo "================================================"
+
+# -- Sanity checks --------------------------------------------------------------
+if [ ! -f "$GGUF_FILE" ]; then
+    echo ""
+    echo "[!] ERROR: GGUF file not found at:"
+    echo "    $GGUF_FILE"
+    echo ""
+    echo "    Make sure you transferred the file with the correct path:"
+    echo "    model_weights/gemma-3-27b-it-q4_k_m.gguf"
+    exit 1
+fi
+
+if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+    echo "[!] Ollama service does not seem to be running."
+    echo "    Start it with:  sudo systemctl start ollama"
+    echo "    Or manually  :  OLLAMA_HOME=$OLLAMA_HOME ollama serve"
+    exit 1
+fi
+
+# -- Write a minimal Modelfile --------------------------------------------------
+echo "[*] Writing Modelfile..."
+cat > "$MODELFILE" <<EOF
+# Modelfile for Gemma 3 27B Instruct (Q4_K_M GGUF)
+FROM $GGUF_FILE
+
+# Recommended chat template for Gemma 3 instruct models
+TEMPLATE """<start_of_turn>user
+{{ .Prompt }}<end_of_turn>
+<start_of_turn>model
+"""
+
+# Generation parameters
+PARAMETER temperature    0.7
+PARAMETER top_p          0.9
+PARAMETER top_k          40
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx        8192
+EOF
+
+echo "    Modelfile written to: $MODELFILE"
+
+# -- Import the model -----------------------------------------------------------
+echo ""
+echo "[*] Running: ollama create $MODEL_NAME -f $MODELFILE"
+echo "    This copies the GGUF into Ollama's blob store — may take a minute..."
+echo ""
+
+OLLAMA_HOME="$OLLAMA_HOME" OLLAMA_MODELS="$OLLAMA_MODELS" ollama create "$MODEL_NAME" -f "$MODELFILE"
+
+echo ""
+echo "================================================"
+echo "  SUCCESS! Model is ready."
+echo ""
+echo "  Quick test:"
+echo "    OLLAMA_HOME=$OLLAMA_HOME OLLAMA_MODELS=$OLLAMA_MODELS ollama run $MODEL_NAME \"Hello!\""
+echo ""
+echo "  List registered models:"
+echo "    OLLAMA_HOME=$OLLAMA_HOME OLLAMA_MODELS=$OLLAMA_MODELS ollama list"
+echo ""
+echo "  The model is now registered as: $MODEL_NAME"
+echo "  Start the server with: python3 run_server_bg_first.py"
+echo "================================================"
+\end{lstlisting}
+
+\newpage
+\subsection{install\_requirements.sh}
+\begin{lstlisting}[style=bashstyle, caption={install\_requirements.sh}]
+#!/bin/bash
+# install_requirements.sh - Python requirements for dataset generation
+# Ollama runs as its own service, so we only need the OpenAI-compatible client + helpers.
+
+set -e
+
+echo "Updating system packages..."
+sudo apt-get update
+
+echo "Installing system dependencies..."
+# psmisc provides 'fuser', used in the background manager scripts
+sudo apt-get install -y psmisc python3-pip python3-venv
+
+echo "Installing Python requirements for the project..."
+# openai  - speaks to Ollama's /v1 OpenAI-compatible endpoint
+# httpx   - used for fine-grained connection control in the generator
+pip3 install openai httpx
+
+echo "------------------------------------------------"
+echo "Project requirements installed successfully!"
+echo ""
+echo "NOTE: Ollama itself is the model server."
+echo "      No llama-cpp-python, huggingface_hub, or"
+echo "      GGUF management libraries are needed."
+echo "------------------------------------------------"
+\end{lstlisting}
+
+\newpage
+\section{Server Management}
+
+\subsection{start\_ollama\_server\_first.sh}
+\begin{lstlisting}[style=bashstyle, caption={start\_ollama\_server\_first.sh}]
+#!/bin/bash
+# start_ollama_server_first.sh
+# Ensures the Ollama daemon is running and the Gemma 3 27B model is loaded.
+# Ollama itself is the server — this script just makes sure it is up.
+
+# Bypass system proxy for localhost connections
+export no_proxy="localhost,127.0.0.1,0.0.0.0"
+export NO_PROXY="localhost,127.0.0.1,0.0.0.0"
+
+# -- Storage: redirect all Ollama data to the large drive ----------------------
+# /home is full; /mnt/storage1/shko/ollama has the free space.
+# OLLAMA_HOME  controls where Ollama stores its config and ed25519 key.
+# OLLAMA_MODELS controls where model blobs (the actual weights) are stored.
+export OLLAMA_HOME="/mnt/storage1/shko/ollama"
+export OLLAMA_MODELS="/mnt/storage1/shko/ollama/Models"
+mkdir -p "$OLLAMA_HOME"
+mkdir -p "$OLLAMA_MODELS"
+
+# Context window: allow up to 32 K tokens for both input and output
+export OLLAMA_NUM_CTX=32768
+
+# Configuration
+MODEL_NAME="gemma3:27b"
+OLLAMA_HOST="0.0.0.0"
+OLLAMA_PORT=11434
+
+echo "------------------------------------------------"
+echo "  Starting / checking Ollama server"
+echo "  Model : $MODEL_NAME"
+echo "  Host  : $OLLAMA_HOST"
+echo "  Port  : $OLLAMA_PORT"
+echo "  GPUs  : Both RTX 4090 D (CUDA_VISIBLE_DEVICES=0,1)"
+echo "------------------------------------------------"
+
+# Export so the Ollama process uses both GPUs
+export CUDA_VISIBLE_DEVICES=0,1
+export OLLAMA_HOST="${OLLAMA_HOST}:${OLLAMA_PORT}"
+
+# If Ollama is running as a systemd service, restart it to pick up env vars
+if systemctl is-active --quiet ollama 2>/dev/null; then
+    echo "[*] Ollama systemd service is active — restarting to apply env vars..."
+    # Patch the systemd override so the service also knows about OLLAMA_HOME
+    sudo mkdir -p /etc/systemd/system/ollama.service.d
+    sudo tee /etc/systemd/system/ollama.service.d/storage.conf > /dev/null <<EOF
+[Service]
+Environment="OLLAMA_HOME=/mnt/storage1/shko/ollama"
+Environment="OLLAMA_MODELS=/mnt/storage1/shko/ollama/Models"
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl restart ollama
+    sleep 3
+else
+    # Otherwise start it as a foreground process (useful when running manually)
+    echo "[*] Starting Ollama serve in the foreground..."
+    exec ollama serve
+fi
+
+# Wait until the REST API is reachable
+echo "[*] Waiting for Ollama API to become available..."
+for i in $(seq 1 30); do
+    if curl -s http://localhost:${OLLAMA_PORT}/api/tags > /dev/null 2>&1; then
+        echo "[+] Ollama API is up!"
+        break
+    fi
+    echo "    ... attempt $i/30"
+    sleep 2
+done
+
+# Pre-load the model so the first inference call is instant
+echo "[*] Pre-loading model $MODEL_NAME into GPU VRAM..."
+ollama run "$MODEL_NAME" "" 2>/dev/null || true
+
+echo ""
+echo "------------------------------------------------"
+echo "  Ollama is ready."
+echo "  API endpoint : http://localhost:${OLLAMA_PORT}"
+echo "  OpenAI compat: http://localhost:${OLLAMA_PORT}/v1"
+echo "  Model        : $MODEL_NAME"
+echo "------------------------------------------------"
+\end{lstlisting}
+
+\newpage
+\subsection{run\_server\_bg\_first.py}
+\begin{lstlisting}[style=pythonstyle, caption={run\_server\_bg\_first.py}]
+import subprocess
+import os
+import time
+import sys
+from pathlib import Path
+
+# --- Configuration ---
+BASE_DIR = Path(__file__).parent.resolve()
+SERVER_SCRIPT = BASE_DIR / "start_ollama_server_first.sh"
+SERVER_LOG    = BASE_DIR / "ollama_server_logs_first.txt"
+
+def start_process(command, log_file_handle, description, cwd=None):
+    """Starts a process in the background and redirects output to a log file."""
+    print(f"[*] Starting {description}...")
+    
+    process = subprocess.Popen(
+        command,
+        stdout=log_file_handle,
+        stderr=subprocess.STDOUT,
+        preexec_fn=os.setpgrp if sys.platform != "win32" else None,
+        cwd=str(cwd) if cwd else str(BASE_DIR)
+    )
+    
+    print(f"[+] {description} started with PID: {process.pid}")
+    return process
+
+def main():
+    if not SERVER_SCRIPT.exists():
+        print(f"ERROR: {SERVER_SCRIPT} not found.")
+        sys.exit(1)
+
+    # --- Cleanup: stop any stale ollama processes that are NOT the systemd service ---
+    print("[*] Cleaning up any stale non-systemd ollama serve processes...")
+    os.system("pkill -9 -f 'ollama serve' > /dev/null 2>&1 || true")
+    
+    print("[*] Waiting 3 seconds for resources to be released...")
+    time.sleep(3)
+
+    os.chmod(SERVER_SCRIPT, 0o755)
+
+    print(f"{'='*60}")
+    print(f" Ollama Server Background Manager")
+    print(f"{'='*60}")
+    print(f" Server Log : {SERVER_LOG}")
+    print(f"{'='*60}")
+
+    with open(SERVER_LOG, "a") as server_handle:
+        server_handle.write(f"\n\n{'='*80}\n")
+        server_handle.write(f" OLLAMA SERVER SESSION STARTED AT: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        server_handle.write(f"{'='*80}\n\n")
+        server_handle.flush()
+
+        server_proc = start_process(["bash", str(SERVER_SCRIPT)], server_handle, "Ollama Server", cwd=BASE_DIR)
+
+    print(f"\n{'='*60}")
+    print(" SUCCESS: Ollama server script is running in the background.")
+    print(f" Server PID : {server_proc.pid}")
+    print(f" Check logs : tail -f {SERVER_LOG}")
+    print(f" API        : http://localhost:11434")
+    print(f" OpenAI API : http://localhost:11434/v1")
+    print(f"{'='*60}\n")
+    print(f" To stop, use: kill {server_proc.pid}")
+    print(f"  or:          sudo systemctl stop ollama")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"CRITICAL ERROR: {e}")
+        sys.exit(1)
+\end{lstlisting}
+
+\newpage
+\section{Dataset Generation}
+
+\subsection{generate\_dataset\_first.py}
+\begin{lstlisting}[style=pythonstyle, caption={generate\_dataset\_first.py}]
+#!/usr/bin/env python3
+"""
+generate_dataset_first.py (Ollama version) - First Dataset Instance
+
+For every .txt file under the configured DATA_DIR:
+  - Standalone files  (e.g. 1-10.txt):   run the prompt NUM_RUNS times -> JSON files
+                                           -> merge all runs into one final JSON file
+  - Part files        (e.g. 163267_part1.txt, 163267_part2.txt, ...):
+                        run the prompt NUM_RUNS times per part -> JSON files per part
+                        -> after ALL parts are done, merge everything into one final JSON
+
+Original .txt files are NEVER deleted.
+Duplicate (question, response) pairs within the same final merged file are removed.
+
+Requires: Ollama running on localhost:11434 with gemma3:27b loaded.
+"""
+
+import os
+import re
+import json
+import time
+import httpx
+from openai import OpenAI
+
+# --------------------------- Bypass Proxy -------------------------------------
+# Ensure localhost connections are NOT routed through any system proxy
+os.environ["no_proxy"] = "localhost,127.0.0.1"
+os.environ["NO_PROXY"] = "localhost,127.0.0.1"
+
+# --------------------------- Configuration ------------------------------------
+
+# Use absolute paths for input and output
+DATA_DIR   = "UKH-AIIC-KA_Just_TXT_file/part1"
+OUTPUT_DIR = "UKH-AIIC-KA_Just_TXT_file_Output/part1" 
+MODEL_NAME = "gemma3:27b"
+NUM_RUNS   = 1
+
+# Ollama OpenAI-compatible endpoint
+client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama",          # Ollama ignores the key but the field must be non-empty
+    http_client=httpx.Client(proxy=None),
+)
+
+# ---------------------------- Prompt Template ---------------------------------
+
+def build_prompt(text: str, run_index: int) -> str:
+    return f"""Act as an expert Kurdish linguist and data engineer.
+Analyze the following text and determine its category (e.g., History, Medical, Mathematics, Technology, Literature, Science, etc.).
+Then, generate high-quality, information-rich question-and-answer pairs based on the text.
+
+IMPORTANT: Return a VALID JSON array. Start your response with '[' and end with ']'. 
+Do NOT include any markdown formatting, code fences (```json), or introductory/concluding text.
+
+Structure:
+[
+  {{
+    "id": "1",
+    "category": "<category>",
+    "question": "<formal Sorani question>",
+    "response": "<formal Sorani answer>",
+    "document": {{
+      "title": "<title>",
+      "source_url": "",
+      "publication_date": ""
+    }}
+  }}
+]
+
+Rules:
+- Language: Central Kurdish (Sorani) ONLY.
+- Grammar: Formal and academic level.
+- Format: Output ONLY the raw JSON array.
+
+Source text:
+\"\"\"
+{text}
+\"\"\"
+"""
+
+# ------------------------------- Helpers --------------------------------------
+
+def call_model(prompt: str) -> str:
+    retry_wait = 30
+    while True:
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=32768,
+            )
+            return response.choices[0].message.content
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError) as e:
+            print(f"\n    x  Server connection lost: {e}")
+            time.sleep(retry_wait)
+        except Exception as e:
+            print(f"\n    x  Error calling model: {e}")
+            time.sleep(retry_wait)
+
+def extract_json_array(raw: str) -> list:
+    if not raw or not isinstance(raw, str):
+        return []
+    cleaned = re.sub(r"```(?:json)?\s*", "", raw)
+    cleaned = cleaned.replace("```", "").strip()
+    start = cleaned.find("[")
+    end   = cleaned.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        json_str = cleaned[start : end + 1]
+        json_str = re.sub(r",\s*([\]}])", r"\1", json_str)
+        try:
+            data = json.loads(json_str)
+            if isinstance(data, list): return data
+            if isinstance(data, dict): return [data]
+        except json.JSONDecodeError: pass
+    return []
+
+def deduplicate(records: list) -> list:
+    seen = set()
+    unique = []
+    for rec in records:
+        key = (rec.get("question", "").strip(), rec.get("response", "").strip())
+        if key not in seen and key != ("", ""):
+            seen.add(key)
+            unique.append(rec)
+    return unique
+
+def re_index(records: list, offset: int = 0) -> list:
+    for i, rec in enumerate(records, start=offset + 1):
+        rec["id"] = str(i)
+    return records
+
+def save_json(path: str, data: list):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"    [SAVE] Saved {len(data)} records -> {os.path.relpath(path)}")
+
+def load_json(path: str) -> list:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def process_single_txt(txt_path: str, output_dir: str, base_name: str):
+    print(f"\n  [FILE] Processing: {os.path.relpath(txt_path)}")
+    with open(txt_path, "r", encoding="utf-8") as f:
+        text = f.read()
+    run_files = []
+    for run in range(1, NUM_RUNS + 1):
+        run_output = os.path.join(output_dir, f"{base_name}_run{run}.json")
+        if os.path.exists(run_output):
+            try:
+                existing = load_json(run_output)
+                if len(existing) > 0:
+                    run_files.append(run_output)
+                    continue
+            except: pass
+        prompt  = build_prompt(text, run)
+        raw     = call_model(prompt)
+        records = extract_json_array(raw)
+        if records:
+            save_json(run_output, records)
+            run_files.append(run_output)
+        time.sleep(2)
+    all_records = []
+    for rf in run_files:
+        if os.path.exists(rf):
+            try: all_records.extend(load_json(rf))
+            except: pass
+    return re_index(deduplicate(all_records))
+
+def process_folder(input_folder: str, output_folder: str):
+    os.makedirs(output_folder, exist_ok=True)
+    all_files = sorted(f for f in os.listdir(input_folder) if f.endswith(".txt"))
+    standalone = [f for f in all_files if "_part" not in f or f.startswith("part_")]
+    parts       = [f for f in all_files if "_part"     in f and not f.startswith("part_")]
+    for fname in standalone:
+        txt_path  = os.path.join(input_folder, fname)
+        base_name = os.path.splitext(fname)[0]
+        final_out = os.path.join(output_folder, f"{base_name}_FINAL.json")
+        if os.path.exists(final_out): continue
+        merged = process_single_txt(txt_path, output_folder, base_name)
+        if merged: save_json(final_out, merged)
+    if parts:
+        groups = {}
+        for fname in parts:
+            group_key = re.sub(r"_part\d+\.txt$", "", fname)
+            groups.setdefault(group_key, []).append(fname)
+        for group_key, part_files in groups.items():
+            final_out = os.path.join(output_folder, f"{group_key}_FINAL.json")
+            if os.path.exists(final_out): continue
+            group_records = []
+            for fname in sorted(part_files):
+                txt_path  = os.path.join(input_folder, fname)
+                base_name = os.path.splitext(fname)[0]
+                merged = process_single_txt(txt_path, output_folder, base_name)
+                group_records.extend(merged)
+            if group_records: save_json(final_out, re_index(deduplicate(group_records)))
+
+def main():
+    if not os.path.exists(DATA_DIR): return
+    process_folder(DATA_DIR, OUTPUT_DIR)
+
+if __name__ == "__main__":
+    main()
+\end{lstlisting}
+
+\newpage
+\subsection{run\_generator\_bg\_first.py}
+\begin{lstlisting}[style=pythonstyle, caption={run\_generator\_bg\_first.py}]
+import subprocess
+import os
+import time
+import sys
+from pathlib import Path
+
+# --- Configuration ---
+BASE_DIR = Path(__file__).parent.resolve()
+GENERATOR_SCRIPT = BASE_DIR / "generate_dataset_first.py"
+GENERATOR_LOG = BASE_DIR / "generate_dataset_logs_first.txt"
+PYTHON_EXEC = sys.executable
+
+def start_process(command, log_file_handle, description, cwd=None):
+    """Starts a process in the background and redirects output to a log file."""
+    print(f"[*] Starting {description}...")
+    
+    process = subprocess.Popen(
+        command,
+        stdout=log_file_handle,
+        stderr=subprocess.STDOUT,
+        preexec_fn=os.setpgrp if sys.platform != "win32" else None,
+        cwd=str(cwd) if cwd else str(BASE_DIR)
+    )
+    
+    print(f"[+] {description} started with PID: {process.pid}")
+    return process
+
+def main():
+    if not GENERATOR_SCRIPT.exists():
+        print(f"ERROR: {GENERATOR_SCRIPT} not found.")
+        sys.exit(1)
+
+    # --- Selective Cleanup ---
+    my_pid = os.getpid()
+    print(f"[*] Cleaning up old generator processes for {GENERATOR_SCRIPT.name}...")
+    os.system(f"pgrep -f '{GENERATOR_SCRIPT.name}' | grep -v '^{my_pid}$' | xargs -r kill -9 2>/dev/null || true")
+    time.sleep(2) 
+
+    print(f"{'='*60}")
+    print(f" Dataset Generator Background Manager")
+    print(f"{'='*60}")
+    print(f" Generator Log : {GENERATOR_LOG}")
+    print(f"{'='*60}")
+
+    with open(GENERATOR_LOG, "a") as generator_handle:
+        generator_handle.write(f"\n\n{'='*80}\n")
+        generator_handle.write(f" DATASET GENERATOR SESSION STARTED AT: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        generator_handle.write(f"{'='*80}\n\n")
+        generator_handle.flush()
+
+        generator_proc = start_process([PYTHON_EXEC, str(GENERATOR_SCRIPT)], generator_handle, "Dataset Generator", cwd=BASE_DIR)
+
+    print(f"\n{'='*60}")
+    print(" SUCCESS: Generator is running in the background.")
+    print(f" Generator PID : {generator_proc.pid}")
+    print(f" Check logs    : tail -f {GENERATOR_LOG}")
+    print(f"{'='*60}\n")
+    print(f" To stop, use: kill {generator_proc.pid}")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"CRITICAL ERROR: {e}")
+        sys.exit(1)
+\end{lstlisting}
+
+\newpage
+\section{Testing and Master Script}
+
+\subsection{test\_ollama.sh}
+\begin{lstlisting}[style=bashstyle, caption={test\_ollama.sh}]
+#!/bin/bash
+# test_ollama.sh
+# Tests whether the Ollama server and gemma3:27b model are working correctly.
+
+# -- Config --
+MODEL_NAME="gemma3:27b"
+OLLAMA_PORT=11434
+BASE_URL="http://localhost:${OLLAMA_PORT}"
+
+echo "================================================"
+echo "  Ollama Test Suite"
+echo "================================================"
+
+# -- Test 1: API reachability --
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/tags")
+if [ "$HTTP_CODE" = "200" ]; then
+    echo "[PASS] Ollama API is reachable"
+else
+    echo "[FAIL] Ollama API is NOT reachable"
+    exit 1
+fi
+
+# -- Test 2: Model is listed --
+if curl -s "${BASE_URL}/api/tags" | grep -q "${MODEL_NAME}"; then
+    echo "[PASS] Model '$MODEL_NAME' found"
+else
+    echo "[FAIL] Model '$MODEL_NAME' NOT found"
+    exit 1
+fi
+
+# -- Test 3: Inference --
+RESPONSE=$(curl -s -X POST "${BASE_URL}/api/generate" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"model\": \"${MODEL_NAME}\",
+        \"prompt\": \"Reply with confirm you are working.\",
+        \"stream\": false
+    }")
+
+if echo "$RESPONSE" | grep -q "response"; then
+    echo "[PASS] Inference OK"
+else
+    echo "[FAIL] Inference failed"
+fi
+\end{lstlisting}
+
+\newpage
+\subsection{run.sh}
+\begin{lstlisting}[style=bashstyle, caption={run.sh}]
+# 1. Install Ollama + GPU support
+chmod +x install_ollama.sh && ./install_ollama.sh
+
+# 2. Register / download the Gemma 3 27B model
+chmod +x setup_ollama_model.sh && ./setup_ollama_model.sh
+
+# 3. Install Python dependencies
+chmod +x install_requirements.sh && ./install_requirements.sh
+
+# 4. Start the Ollama server in background
+python3 run_server_bg_first.py
+
+# 5. Start the dataset generator in background
+python3 run_generator_bg_first.py
+
+# To stop everything:
+chmod +x pkill_ollama.sh && ./pkill_ollama.sh
+\end{lstlisting}
+
+\newpage
+\subsection{pkill\_ollama.sh}
+\begin{lstlisting}[style=bashstyle, caption={pkill\_ollama.sh}]
+#!/bin/bash
+# pkill_ollama.sh - Stop all Ollama and dataset-generator processes
+
+echo "🛑 Terminating all Ollama and generator processes..."
+
+# Stop the systemd Ollama service (if running)
+if systemctl is-active --quiet ollama 2>/dev/null; then
+    echo "  [*] Stopping ollama systemd service..."
+    sudo systemctl stop ollama
+fi
+
+# Kill any manually started ollama serve processes
+pkill -9 -f "ollama serve"    2>/dev/null || true
+pkill -9 -f "run_server_bg"   2>/dev/null || true
+pkill -9 -f "run_generator_bg" 2>/dev/null || true
+pkill -9 -f "generate_dataset" 2>/dev/null || true
+
+# Free the Ollama default port just in case
+fuser -k 11434/tcp 2>/dev/null || true
+
+echo "✅ All killed."
+\end{lstlisting}
+
+\end{document}
