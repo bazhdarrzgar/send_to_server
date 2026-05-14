@@ -47,7 +47,7 @@ TARGET_FOLDERS = [
 ]
 
 MODEL_NAME      = "gemma3:27b"
-NUM_RUNS        = 1
+NUM_RUNS        = 10
 
 # Ollama OpenAI-compatible endpoint
 # Instance 2: Port 11435 (GPU 1)
