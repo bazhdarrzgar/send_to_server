@@ -12,7 +12,7 @@ load_dotenv()
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:26b")
 JSON_FILE = os.getenv("JSON_FILE", "kurdish_medical_corpus_kmc.json")
 
 # Initialize Neo4j and LLM

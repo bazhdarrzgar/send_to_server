@@ -1,95 +1,133 @@
-> **Prompt:**
-> "I am building a local GraphRAG system for a Central Kurdish (CKB) Medical Corpus using Neo4j and Ollama.
-> **Data Structure:** I have JSON containing instructions, responses, and document metadata (source_url, domain, date).
-> **Objective:**
-> 1. Write a Python script using `langchain-community` and `neo4j` to parse this JSON and create a Knowledge Graph.
-> 2. Define a schema where 'Symptoms' and 'Treatments' are extracted from the text as unique entities.
-> 3. Implement a local retrieval chain using 'Gemma-4' via Ollama for reasoning and 'nomic-embed-text' for vector embeddings.
-> 4. Ensure the system can answer questions by first searching the Neo4j graph for related nodes and then summarizing the findings in Central Kurdish."
-> 
-> 
+# Kurdish Medical GraphRAG System
+
+A powerful, local Graph-based Retrieval-Augmented Generation (GraphRAG) system designed specifically for the **Central Kurdish (Sorani)** medical domain. This system combines the structured knowledge of a Graph Database (Neo4j) with the semantic power of Vector Search and Large Language Models (Ollama/Gemma).
 
 ---
 
-### 2. The Training & Implementation Code
+## 🚀 Overview
 
-Since you want this 100% local, you don't "train" the base model from scratch (which costs thousands). Instead, you **Fine-Tune** the retrieval (RAG) and the Knowledge Graph.
+This project implements a hybrid retrieval system that can answer medical questions in Kurdish by combining the structured knowledge of a Graph Database with semantic vector search.
 
-#### Step 1: Install Dependencies
+### System Flowchart
 
+```mermaid
+graph TD
+    subgraph Ingestion_Phase [1. Ingestion Phase]
+        A[JSON Medical Corpus] --> B[ingest.py]
+        B --> C{Ollama / Gemma}
+        C -- Entity Extraction --> D[Symptoms & Treatments]
+        D --> E[(Neo4j Graph Database)]
+        A --> E
+    end
+
+    subgraph Query_Phase [2. Agentic Chat Phase]
+        F[User Question] --> G[chat.py]
+        G --> H[query.py / hybrid_query]
+        H --> I[Vector Search]
+        H --> J[Graph Cypher Search]
+        I --> K[Semantic Context]
+        J --> L[Structured Context]
+        K --> M{LLM Synthesis / Gemma}
+        L --> M
+        M --> N[Kurdish Medical Answer]
+    end
+
+    E -.-> I
+    E -.-> J
+```
+
+---
+
+## 🛠 Prerequisites
+
+Before running the project, ensure you have the following installed:
+
+### 1. Neo4j (via Docker)
+Run Neo4j with the APOC plugin enabled:
 ```bash
-pip install langchain langchain-community neo4j ollama graphrag
-
+docker run \
+    --name neo4j-medical \
+    -p 7474:7474 -p 7687:7687 \
+    -d \
+    -e NEO4J_AUTH=neo4j/password \
+    -e NEO4J_PLUGINS='["apoc"]' \
+    neo4j:latest
 ```
 
-#### Step 2: The GraphRAG Pipeline
+### 2. Ollama
+Download Ollama from [ollama.com](https://ollama.com) and pull the models:
+```bash
+ollama pull gemma4:26b
+ollama pull nomic-embed-text
+```
 
-This script connects your JSON data to your local Neo4j instance and prepares it for Gemma 4.
-
-```python
-import json
-from neo4j import GraphDatabase
-from langchain_community.llms import Ollama
-from langchain_community.graphs import Neo4jGraph
-
-# 1. Initialize Local Gemma 4
-llm = Ollama(model="gemma4:31b") # Or use 'gemma4:4b' if you have lower VRAM
-
-# 2. Connect to local Neo4j
-graph = Neo4jGraph(
-    url="bolt://localhost:7687", 
-    username="neo4j", 
-    password="password"
-)
-
-# 3. Ingestion Function
-def ingest_medical_data(json_file):
-    with open(json_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        
-    for item in data:
-        # Cypher query to build the graph
-        query = """
-        MERGE (d:Document {title: $title})
-        SET d.source = $source, d.date = $date
-        MERGE (i:Instruction {text: $inst, id: $id})
-        MERGE (r:Response {text: $resp})
-        MERGE (i)-[:RESULTED_IN]->(r)
-        MERGE (r)-[:EXTRACTED_FROM]->(d)
-        """
-        graph.query(query, params={
-            "title": item['document']['title'],
-            "source": item['document']['source_url'],
-            "date": item['document']['publication_date'],
-            "inst": item['instruction'],
-            "resp": item['response'],
-            "id": item['id']
-        })
-    print("Graph Build Complete.")
-
-# 4. Local GraphRAG Query
-def ask_kurdish_medical_graph(question):
-    # This uses the LLM to write a Cypher query to search the graph
-    from langchain.chains import GraphCypherQAChain
-    
-    chain = GraphCypherQAChain.from_llm(llm, graph=graph, verbose=True)
-    response = chain.run(question)
-    return response
-
-# Usage
-# ingest_medical_data('your_data.json')
-# print(ask_kurdish_medical_graph("ڕۆڵی پەرستاران لە خەستەخانەکان چییە؟"))
-
+### 3. Python Environment
+```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
 ---
 
-### 3. Understanding the System Architecture
+## 📂 Project Structure
 
-To help you visualize how your local computer handles this without the cloud, here is the flow:
+- `ingest.py`: Processes the `kurdish_medical_corpus_kmc.json` file and builds the Neo4j graph.
+- `query.py`: Contains the logic for Hybrid Search (Vector + Graph).
+- `chat.py`: **(New)** Interactive terminal interface for chatting with the AI.
+- `kurdish_medical_corpus_kmc.json`: The raw dataset.
+- `.env`: Configuration for Neo4j and Ollama.
 
-1. **Data Layer:** Your JSON files live on your SSD.
-2. **Graph Layer:** Neo4j stores the *relationships* (e.g., this medicine treats this condition).
-3. **Local Inference:** **Ollama** runs the **Gemma 4** weights using your GPU/RAM.
-4. **Retrieval:** When you ask a question, the system doesn't just look for words; it "walks" the graph to find connected medical facts.
+---
 
+## 📖 How to Use
+
+### Step 1: Data Ingestion
+Populate your database by running the ingestion script. By default, it processes the first 100 items for testing.
+```bash
+python ingest.py
+```
+
+### Step 2: Interactive Chat (Terminal Interface)
+Launch the agentic terminal interface to ask questions:
+```bash
+python chat.py
+```
+
+---
+
+## 🧠 How it Works (Under the Hood)
+
+### 1. The Knowledge Graph
+The system builds a graph with the following schema:
+- **Nodes**: `Document`, `Instruction`, `Response`, `Symptom`, `Treatment`.
+- **Relationships**: 
+  - `(Instruction)-[:RESULTED_IN]->(Response)`
+  - `(Response)-[:EXTRACTED_FROM]->(Document)`
+  - `(Response)-[:MENTIONS_SYMPTOM]->(Symptom)`
+  - `(Response)-[:HAS_TREATMENT]->(Treatment)`
+
+### 2. Hybrid Retrieval
+When you ask a question like *"نیشانەکانی ئەنفلۆنزا چیین؟"* (What are the symptoms of influenza?):
+1.  **Vector Search**: Finds the most semantically similar text responses in the database.
+2.  **Graph Search**: Generates a Cypher query to find specific Symptoms and Treatments linked to the topic.
+3. **Synthesis**: Both sets of context are fed into the LLM. The system is instructed to **Think** (Chain-of-Thought) before generating a comprehensive, accurate answer in Central Kurdish, ensuring much higher quality and medical accuracy.
+
+---
+
+## 🔧 Configuration
+
+Modify the `.env` file to change models or database credentials:
+```env
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=password
+OLLAMA_MODEL=gemma4:26b
+EMBEDDING_MODEL=nomic-embed-text
+JSON_FILE=kurdish_medical_corpus_kmc.json
+```
+
+---
+
+## 📝 License
+This project is for educational and research purposes in the field of Kurdish NLP and Medical AI.

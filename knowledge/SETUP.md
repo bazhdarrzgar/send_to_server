@@ -23,7 +23,7 @@ docker run \
 Download and install Ollama from [ollama.com](https://ollama.com).
 After installation, pull the required models:
 ```bash
-ollama pull gemma4:31b
+ollama pull gemma4:26b
 ollama pull nomic-embed-text
 ```
 

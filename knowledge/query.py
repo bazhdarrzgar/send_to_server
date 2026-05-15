@@ -11,7 +11,7 @@ load_dotenv()
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:26b")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 
 # Initialize models
@@ -61,21 +61,32 @@ def hybrid_query(question):
         print(f"Graph search error: {e}")
         graph_context = "زانیاری لە گرافەکەدا نەدۆزرایەوە."
 
-    # Step 3: Final Synthesis
+    # Step 3: Final Synthesis with Thinking
     prompt = f"""
-    تۆ یاریدەدەرێکی پزیشکی کوردیییت (Central Kurdish).
-    بەپێی ئەو زانیارییانەی لە خوارەوە هاتووە، وەڵامی پرسیارەکە بدەرەوە.
-    هەوڵ بدە وەڵامەکەت ڕوون و کورتبێت.
-
+    تۆ یاریدەدەرێکی پزیشکی پسپۆڕی کوردیییت (Central Kurdish).
+    
+    بۆ ئەوەی باشترین وەڵام بدەیتەوە، سەرەتا لە دڵی خۆتدا بیر بکەرەوە (Think step-by-step):
+    1. پێداچوونەوە بە زانیارییەکانی گەڕانی ڤێکتەری (Vector Search).
+    2. پێداچوونەوە بە زانیارییەکانی گەڕانی گراف (Graph Search).
+    3. بەراوردکردنی زانیارییەکان و دڵنیابوونەوە لە ڕاستی پزیشکی.
+    
+    پاشان وەڵامێکی گشتگیر و ڕوون بە زمانی کوردی (سۆرانی) بنووسە.
+    
     Context from Vector Search:
     {vector_context}
-
+    
     Context from Graph Search:
     {graph_context}
-
+    
     Question: {question}
     
-    Answer (in Central Kurdish):
+    وەڵامەکەت بەم شێوەیە دابەش بکە:
+    <thinking>
+    (لێرەدا هەنگاوەکانی بیرکردنەوەت بنووسە بە کوردی)
+    </thinking>
+    
+    وەڵامی کۆتایی:
+    (لێرەدا وەڵامی کۆتایی بۆ بەکارهێنەر بنووسە)
     """
     
     response = llm.invoke(prompt)
