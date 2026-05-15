@@ -8,11 +8,16 @@ Follow these steps to set up the Knowledge Graph extraction pipeline on your ser
 - **Neo4j**: Either a local installation, a Docker container, or Neo4j Aura.
 
 ## 2. Automatic Setup
-Run the provided bash script to automate dependency installation and model pulling:
+Run the provided bash script to automate dependency installation, Docker/Neo4j setup, and model pulling:
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
+The script will:
+- Install Python dependencies.
+- **Install Docker** (if missing).
+- **Run Neo4j** in a container named `neo4j-kmc`.
+- Pull the necessary LLM model via Ollama.
 
 ## 3. Manual Configuration
 
