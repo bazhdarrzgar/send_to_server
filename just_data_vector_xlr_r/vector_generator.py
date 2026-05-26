@@ -18,7 +18,7 @@ logging.basicConfig(
 
 # Configuration
 # We use xlm-roberta-base (or xlm-roberta-large) as requested
-MODEL_NAME = "xlm-roberta-base"
+MODEL_NAME = "xlm-roberta-large"
 DATASET_PATH = "../just_data_vector/kurdish_medical_corpus_kmc.json"
 OUTPUT_PATH = "kurdish_medical_vectors.jsonl"
 CHECKPOINT_PATH = "processed_ids.txt"

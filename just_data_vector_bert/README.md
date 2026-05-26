@@ -1,11 +1,11 @@
 # KMC Vector Generation Pipeline
 
-This project transforms the **Kurdish Medical Corpus (KMC)** into dense vector embeddings using the `bert-base-multilingual-cased` model.
+This project transforms the **Kurdish Medical Corpus (KMC)** into dense vector embeddings using the `bert-large-cased` model.
 
 ## Pipeline Architecture
 1. **KMC Dataset**: Ingests JSON data from the source.
 2. **Text Cleaning**: Sanitizes Kurdish medical text.
-3. **Model Embeddings**: Uses `bert-base-multilingual-cased` via Hugging Face Transformers to generate vector representations.
+3. **Model Embeddings**: Uses `bert-large-cased` via Hugging Face Transformers to generate vector representations.
 4. **Vector Storage**: Stores generated vectors in a JSONL file format (`kurdish_medical_vectors.jsonl`).
 
 ## Setup

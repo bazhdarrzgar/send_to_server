@@ -18,19 +18,19 @@ pip install -r requirements.txt
 # 3. Create .env template if it doesn't exist
 if [ ! -f .env ]; then
     echo "📝 Creating .env template..."
-    echo "MODEL_NAME=xlm-roberta-base" > .env
+    echo "MODEL_NAME=xlm-roberta-large" > .env
     echo "DATASET_PATH=../just_data_vector/kurdish_medical_corpus_kmc.json" >> .env
     echo "OUTPUT_PATH=kurdish_medical_vectors.jsonl" >> .env
 fi
 
 # 4. Download and Cache XLM-R Model
-echo "🧠 Downloading and caching the 'xlm-roberta-base' model..."
+echo "🧠 Downloading and caching the 'xlm-roberta-large' model..."
 python3 -c "
 from transformers import AutoTokenizer, AutoModel
 print('Downloading tokenizer...')
-AutoTokenizer.from_pretrained('xlm-roberta-base')
+AutoTokenizer.from_pretrained('xlm-roberta-large')
 print('Downloading model...')
-AutoModel.from_pretrained('xlm-roberta-base')
+AutoModel.from_pretrained('xlm-roberta-large')
 print('Model cached successfully!')
 "
 

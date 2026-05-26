@@ -17,8 +17,8 @@ logging.basicConfig(
 )
 
 # Configuration
-# We use bert-base-multilingual-cased as requested for BERT
-MODEL_NAME = "bert-base-multilingual-cased"
+# We use bert-large-cased as requested for BERT
+MODEL_NAME = "bert-large-cased"
 DATASET_PATH = "../just_data_vector/kurdish_medical_corpus_kmc.json"
 OUTPUT_PATH = "kurdish_medical_vectors.jsonl"
 CHECKPOINT_PATH = "processed_ids.txt"
