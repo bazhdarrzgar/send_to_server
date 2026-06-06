@@ -1,0 +1,10 @@
+#!/bin/sh
+'''exec' /media/swyanswartz/e02e2612-6768-4d79-b2b3-a07d5b9b35a1/home/soyanswartz/Documents/new_vps/send_to_windows/Improve_Dielect/.venv/bin/python3 "$0" "$@"
+' '''
+# -*- coding: utf-8 -*-
+import re
+import sys
+from charset_normalizer.cli import cli_detect
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\.pyw|\.exe)?$', '', sys.argv[0])
+    sys.exit(cli_detect())
