@@ -3,3 +3,4 @@ knowledge/kurdish_medical_corpus_kmc.json
 !knowledge/requirements.txt
 node_modules/
 .env
+.venv/
