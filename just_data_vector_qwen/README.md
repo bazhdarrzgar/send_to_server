@@ -5,7 +5,7 @@ This project transforms the **Kurdish Medical Corpus (KMC)** into a Knowledge Gr
 ## Pipeline Architecture
 1. **KMC Dataset**: Ingests JSON data.
 2. **Text Cleaning**: Sanitizes Kurdish medical text.
-3. **LLM NER & RE**: Uses `gemma4:26b` via Ollama to extract entities and relations.
+3. **LLM NER & RE**: Uses `qwen3.6:35b` via Ollama to extract entities and relations.
 4. **Triple Generation**: Formats results as `(Entity) -[Relation]-> (Entity)`.
 5. **Knowledge Graph Storage**: Stores triples in **Neo4j**.
 
@@ -24,7 +24,7 @@ This project transforms the **Kurdish Medical Corpus (KMC)** into a Knowledge Gr
 3. **Pull Model**:
    Ensure Ollama is running and pull the model:
    ```bash
-   ollama pull gemma4:26b
+   ollama pull qwen3.6:35b
    ```
 
 ## Usage

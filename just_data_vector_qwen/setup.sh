@@ -51,11 +51,11 @@ fi
 if ! command -v ollama &> /dev/null; then
     echo "⚠️ Ollama not found in PATH. Please install it from https://ollama.com"
 else
-    if ollama list | grep -q "gemma4:26b"; then
-        echo "✅ Model gemma4:26b already exists in Ollama."
+    if ollama list | grep -q "qwen3.6:35b"; then
+        echo "✅ Model qwen3.6:35b already exists in Ollama."
     else
-        echo "🧠 Pulling Gemma model (gemma4:26b)..."
-        ollama pull gemma4:26b
+        echo "🧠 Pulling Qwen model (qwen3.6:35b)..."
+        ollama pull qwen3.6:35b
     fi
 fi
 
