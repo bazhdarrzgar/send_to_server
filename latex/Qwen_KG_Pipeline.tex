@@ -1,0 +1,1609 @@
+%!TEX TS-program = xelatex
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{fontspec}
+
+\newfontfamily\kurdishfont[Script=Arabic]{Amiri}
+% For code listings: FreeMono keeps brackets clear and supports Kurdish text.
+\newfontfamily\codemonofont{FreeMono}
+\newcommand{\codeleftparen}{{\codemonofont(}}
+\newcommand{\coderightparen}{{\codemonofont)}}
+\newcommand{\codeleftbracket}{{\codemonofont[}}
+\newcommand{\coderightbracket}{{\codemonofont]}}
+\newcommand{\codeleftbrace}{{\codemonofont\char`\{}}
+\newcommand{\coderightbrace}{{\codemonofont\char`\}}}
+
+\usepackage{hyperref}
+\usepackage{booktabs}
+
+% Core packages
+\usepackage{amsmath,amssymb}
+\usepackage{tikz-cd}
+\usepackage{multicol}
+\usepackage{xcolor}
+\usepackage{listings}
+
+% Code listings
+\lstdefinestyle{pythoncode}{
+  language=Python,
+  basicstyle=\footnotesize\codemonofont,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{orange!50!black},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true,
+  tabsize=4,
+  frame=single,
+  numbers=left,
+  numberstyle=\scriptsize\codemonofont\color{gray},
+  stepnumber=1,
+  numbersep=10pt,
+  extendedchars=false,
+  literate=
+    {(}{{\codeleftparen}}1
+    {)}{{\coderightparen}}1
+    {[}{{\codeleftbracket}}1
+    {]}{{\coderightbracket}}1
+    {\{}{{\codeleftbrace}}1
+    {\}}{{\coderightbrace}}1
+}
+
+\lstdefinestyle{bashcode}{
+  language=bash,
+  basicstyle=\footnotesize\codemonofont,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{orange!50!black},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true,
+  tabsize=4,
+  frame=single,
+  numbers=left,
+  numberstyle=\scriptsize\codemonofont\color{gray},
+  stepnumber=1,
+  numbersep=10pt,
+  extendedchars=false,
+  literate=
+    {(}{{\codeleftparen}}1
+    {)}{{\coderightparen}}1
+    {[}{{\codeleftbracket}}1
+    {]}{{\coderightbracket}}1
+    {\{}{{\codeleftbrace}}1
+    {\}}{{\coderightbrace}}1
+}
+
+% Paragraphs
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1\baselineskip}
+
+\title{Dual-GPU Qwen Knowledge Graph Pipeline}
+\author{Data Engineering Team}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Overview}
+
+This document contains a comprehensive toolkit of scripts utilized for generating a medical Knowledge Graph from the Kurdish medical dataset. It leverages a dual-GPU deployment of the Qwen3.6:35b model via Ollama for semantic relation extraction and Neo4j for storage. Below is a summary table containing links to the code for each step in the pipeline, alongside an explanation of its purpose.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{} l l p{9cm} @{}}
+\toprule
+\textbf{Script Name} & \textbf{Section Link} & \textbf{Purpose / Why We Use It} \\
+\midrule
+
+\multicolumn{3}{@{}l}{\textbf{Data Preparation}} \\
+\midrule
+Split Dataset & \hyperref[sec:split]{Section \ref*{sec:split}} & Splits the dataset into two parts for parallel processing on two GPUs. \\
+\addlinespace
+
+\multicolumn{3}{@{}l}{\textbf{Knowledge Graph Generators}} \\
+\midrule
+KG Generator (GPU 0) & \hyperref[sec:gengpu0]{Section \ref*{sec:gengpu0}} & Extracts medical triples using Ollama on GPU 0 and stores them in Neo4j. \\
+KG Generator (GPU 1) & \hyperref[sec:gengpu1]{Section \ref*{sec:gengpu1}} & Extracts medical triples using Ollama on GPU 1 and stores them in Neo4j. \\
+Run KG Script (GPU 0) & \hyperref[sec:runkg0]{Section \ref*{sec:runkg0}} & Shell script to run the GPU 0 knowledge graph generator in the background. \\
+Run KG Script (GPU 1) & \hyperref[sec:runkg1]{Section \ref*{sec:runkg1}} & Shell script to run the GPU 1 knowledge graph generator in the background. \\
+Stop KG Script & \hyperref[sec:stopkg]{Section \ref*{sec:stopkg}} & Gracefully stops the background Python processes and Ollama servers. \\
+\addlinespace
+
+\multicolumn{3}{@{}l}{\textbf{Setup \& Environment}} \\
+\midrule
+Setup Script & \hyperref[sec:setup]{Section \ref*{sec:setup}} & Prepares the environment by installing dependencies and configuring Neo4j/Ollama. \\
+Setup Runner & \hyperref[sec:runsetup]{Section \ref*{sec:runsetup}} & Python wrapper to execute the setup shell script in the background. \\
+Model Loader (GPU 0) & \hyperref[sec:loader0]{Section \ref*{sec:loader0}} & A dedicated script to manage loading the Ollama model into GPU 0 memory. \\
+Model Loader (GPU 1) & \hyperref[sec:loader1]{Section \ref*{sec:loader1}} & A dedicated script to manage loading the Ollama model into GPU 1 memory. \\
+Requirements & \hyperref[sec:requirements]{Section \ref*{sec:requirements}} & Lists the necessary Python packages for the pipeline. \\
+\bottomrule
+\end{tabular}
+\caption{Dual-GPU Knowledge Graph generation scripts categorized by functional domain.}
+\end{table}
+
+\clearpage
+
+\section{Split Dataset} \label{sec:split}
+\textbf{Purpose:} Splits the dataset into two equal halves to allow parallel processing across the two GPUs.
+
+\begin{lstlisting}[style=pythoncode, caption={split\_dataset.py}]
+import json
+import math
+import os
+
+def split_dataset(input_path, output_part1, output_part2):
+    print(f"Reading {input_path}...")
+    with open(input_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    total_entries = len(data)
+    halfway = math.ceil(total_entries / 2)
+    
+    part1 = data[:halfway]
+    part2 = data[halfway:]
+    
+    print(f"Total entries: {total_entries}")
+    print(f"Part 1: {len(part1)} entries")
+    print(f"Part 2: {len(part2)} entries")
+    
+    with open(output_part1, 'w', encoding='utf-8') as f:
+        json.dump(part1, f, ensure_ascii=False, indent=2)
+    
+    with open(output_part2, 'w', encoding='utf-8') as f:
+        json.dump(part2, f, ensure_ascii=False, indent=2)
+    
+    print(f"Successfully saved to {output_part1} and {output_part2}")
+
+if __name__ == "__main__":
+    DATASET_PATH = "kurdish_medical_corpus_kmc.json"
+    PART1_PATH = "kurdish_medical_corpus_kmc_part1.json"
+    PART2_PATH = "kurdish_medical_corpus_kmc_part2.json"
+    
+    if os.path.exists(DATASET_PATH):
+        split_dataset(DATASET_PATH, PART1_PATH, PART2_PATH)
+    else:
+        print(f"Error: {DATASET_PATH} not found.")
+\end{lstlisting}
+
+\section{Knowledge Graph Generator (GPU 0)} \label{sec:gengpu0}
+\textbf{Purpose:} We use this script to extract medical triples from the first half of the Kurdish dataset using the Ollama service on GPU 0.
+
+\begin{lstlisting}[style=pythoncode, caption={kg\_generator\_gpu\_0.py}]
+import json
+import os
+import re
+import time
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Optional
+from tqdm import tqdm
+from ollama import Client
+from neo4j import GraphDatabase
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# ─────────────────────────────────────────────────────────
+# GPU 0  →  Ollama on port 11434
+# ─────────────────────────────────────────────────────────
+
+# Setup Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("kg_pipeline_gpu_0.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# ── Configuration ─────────────────────────────────────────
+OLLAMA_HOST   = os.getenv("OLLAMA_HOST_GPU0", "http://localhost:11434")
+OLLAMA_MODEL  = "qwen3.6:35b"
+NEO4J_URI     = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
+NEO4J_USER    = os.getenv("NEO4J_USER",     "neo4j")
+NEO4J_PASSWORD= os.getenv("NEO4J_PASSWORD", "password")
+DATASET_PATH  = "kurdish_medical_corpus_kmc_part1.json"
+CHECKPOINT_PATH = "processed_ids_gpu_0.txt"
+OUTPUT_FILE   = "extracted_triples_gpu_0.jsonl"
+
+# Qwen3 generation options – generous token budgets so CoT has room to breathe
+OLLAMA_OPTIONS = {
+    "temperature": 0.6,      # Qwen3 docs recommend 0.6 for balanced CoT
+    "top_p": 0.95,           # Qwen3 recommended value
+    "top_k": 20,             # Qwen3 recommended value
+    "min_p": 0,
+    "num_predict": 8192,     # Large budget: CoT + JSON output
+    "num_ctx": 16384,        # Context window – enough for long Kurdish texts + prompt
+    "repeat_penalty": 1.0,
+}
+
+# ── Robust JSON extractor ──────────────────────────────────
+def _extract_json_from_text(text: str) -> Optional[list]:
+    """
+    Extract the first JSON array from arbitrary text (including CoT reasoning).
+    Qwen3 thinks in <think>…</think> blocks before giving the answer;
+    we must scan the *entire* response for any valid JSON array.
+    """
+    if not text:
+        return None
+
+    # Strip think blocks if present (Qwen3 CoT)
+    text_no_think = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
+    # Prefer text after think block; fall back to full text
+    sources = [text_no_think, text] if text_no_think else [text]
+
+    for src in sources:
+        # Try to find a JSON array directly
+        for match in re.finditer(r'\[', src):
+            start = match.start()
+            depth = 0
+            for i, ch in enumerate(src[start:], start):
+                if ch == '[':
+                    depth += 1
+                elif ch == ']':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = src[start:i + 1]
+                        try:
+                            return json.loads(candidate)
+                        except json.JSONDecodeError:
+                            break
+
+        # Try wrapped in code block: ```json … ```
+        cb = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', src, re.DOTALL)
+        if cb:
+            try:
+                return json.loads(cb.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # Try a bare JSON object that IS a list item (dict)
+        for match in re.finditer(r'\{', src):
+            start = match.start()
+            depth = 0
+            for i, ch in enumerate(src[start:], start):
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = src[start:i + 1]
+                        try:
+                            obj = json.loads(candidate)
+                            if isinstance(obj, dict):
+                                return [obj]
+                        except json.JSONDecodeError:
+                            break
+
+    return None
+
+
+# ── Validation ─────────────────────────────────────────────
+VALID_TYPES = {
+    "Disease", "Symptom", "Treatment", "Medication",
+    "Anatomy", "Provider", "Organization"
+}
+
+def _validate_triples(raw_triples: list) -> List[Dict]:
+    """Strict quality gate: every triple must have non-empty head/relation/tail."""
+    valid = []
+    for t in raw_triples:
+        if not isinstance(t, dict):
+            continue
+        head     = str(t.get('head',     '')).strip()
+        relation = str(t.get('relation', '')).strip()
+        tail     = str(t.get('tail',     '')).strip()
+        head_type = str(t.get('head_type', 'Entity')).strip()
+        tail_type = str(t.get('tail_type', 'Entity')).strip()
+
+        if len(head) < 2 or len(tail) < 2 or len(relation) < 2:
+            continue
+
+        # Normalise types
+        if head_type not in VALID_TYPES:
+            head_type = 'Entity'
+        if tail_type not in VALID_TYPES:
+            tail_type = 'Entity'
+
+        valid.append({
+            "head":      head,
+            "head_type": head_type,
+            "relation":  relation,
+            "tail":      tail,
+            "tail_type": tail_type,
+        })
+    return valid
+
+
+# ── Main class ─────────────────────────────────────────────
+class KMCKnowledgeGraph:
+    def __init__(self):
+        logger.info(f"Connecting to Ollama at {OLLAMA_HOST} (GPU 0) …")
+        self.client = Client(host=OLLAMA_HOST)
+
+        # Warm-up: ensure model is loaded on GPU 0
+        try:
+            logger.info(f"Pre-loading model {OLLAMA_MODEL} on GPU 0 …")
+            self.client.generate(
+                model=OLLAMA_MODEL,
+                prompt="Hello",
+                options={"num_predict": 1}
+            )
+            logger.info("Model pre-loaded successfully.")
+        except Exception as e:
+            logger.warning(f"Model pre-load warning (continuing): {e}")
+
+        try:
+            self.driver = GraphDatabase.driver(
+                NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)
+            )
+            self.driver.verify_connectivity()
+            logger.info("Connected to Neo4j successfully.")
+        except Exception as e:
+            logger.error(f"Failed to connect to Neo4j: {e}")
+            raise
+
+        self.processed_ids = self._load_checkpoints()
+        self.lock = threading.RLock()
+        
+        # Persistent file handles for faster I/O
+        self.checkpoint_file = open(CHECKPOINT_PATH, 'a', encoding='utf-8')
+        self.output_file = open(OUTPUT_FILE, 'a', encoding='utf-8')
+        self.neo4j_ok = True
+
+    # ── Checkpointing ──────────────────────────────────────
+    def _load_checkpoints(self) -> set:
+        if os.path.exists(CHECKPOINT_PATH):
+            with open(CHECKPOINT_PATH, 'r', encoding='utf-8') as f:
+                return set(line.strip() for line in f if line.strip())
+        return set()
+
+    def _save_checkpoint(self, entry_id: str):
+        with self.lock:
+            self.checkpoint_file.write(f"{entry_id}\n")
+            self.checkpoint_file.flush()
+            self.processed_ids.add(entry_id)
+
+    def close(self):
+        try:
+            self.driver.close()
+        except:
+            pass
+        try:
+            self.checkpoint_file.close()
+            self.output_file.close()
+        except:
+            pass
+
+    # ── Text cleaning ──────────────────────────────────────
+    def clean_text(self, text: str) -> str:
+        if not text:
+            return ""
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+
+    # ── Triple extraction ──────────────────────────────────
+    def extract_triples(self, text: str, max_retries: int = 5) -> List[Dict]:
+        """
+        Extract knowledge-graph triples from Kurdish medical text.
+
+        KEY DESIGN DECISION for Qwen3.6:35b
+        ─────────────────────────────────────
+        • We do NOT pass format="json" to Ollama.
+          Qwen3 uses internal Chain-of-Thought (<think>…</think>) before
+          writing the final answer.  Forcing JSON mode suppresses that CoT
+          block which drastically hurts extraction quality and often produces
+          empty output.
+        • Instead we prompt the model to wrap its final JSON in a clear
+          delimiter (===JSON_START=== / ===JSON_END===) so our parser can
+          find it reliably even inside a long reasoning trace.
+        • num_predict is set to 8192 to give the CoT enough room.
+        """
+        prompt = (
+            "You are an elite Kurdish medical linguist and knowledge graph engineer.\n"
+            "Your task is to extract high-quality, semantically rich medical triples "
+            "from the provided Kurdish text.\n\n"
+
+            "CRITICAL QUALITY REQUIREMENTS:\n"
+            "1. LANGUAGE: All medical entities and relationships MUST be in natural, "
+            "accurate Kurdish (Sorani/Central Kurdish).\n"
+            "2. MEANINGFUL RELATIONS: Use precise medical verbs, never 'has' or 'is'.\n"
+            "   Examples:\n"
+            "   - 'دەبێتە هۆی'           (causes)\n"
+            "   - 'نیشانەیە بۆ'           (is a symptom of)\n"
+            "   - 'بەکاردێت بۆ چارەسەری'  (used for treatment of)\n"
+            "   - 'کاردەکاتە سەر'         (affects)\n"
+            "   - 'بەشێکە لە'            (is part of)\n"
+            "3. ENTITY TYPES: head_type and tail_type MUST be ONE of: "
+            "[Disease, Symptom, Treatment, Medication, Anatomy, Provider, Organization].\n"
+            "4. DATA INTEGRITY: Every triple MUST have a valid head, relation, and tail. "
+            "No empty strings.\n"
+            "5. COMPLETENESS: Extract ALL meaningful medical facts from the text. "
+            "Aim for at least 3-8 triples per passage if the text contains medical info.\n\n"
+
+            f"Kurdish Text:\n{text}\n\n"
+
+            "Think carefully about the medical entities and their relationships.\n"
+            "After your reasoning, output YOUR FINAL ANSWER between these exact markers:\n"
+            "===JSON_START===\n"
+            "[\n"
+            "  {\n"
+            '    "head": "Entity Name in Kurdish",\n'
+            '    "head_type": "English Label",\n'
+            '    "relation": "Detailed Kurdish Relationship",\n'
+            '    "tail": "Target Entity in Kurdish",\n'
+            '    "tail_type": "English Label"\n'
+            "  }\n"
+            "]\n"
+            "===JSON_END===\n\n"
+            "If the text contains NO meaningful medical relationships, output:\n"
+            "===JSON_START===\n"
+            "[]\n"
+            "===JSON_END==="
+        )
+
+        for attempt in range(max_retries):
+            try:
+                response = self.client.generate(
+                    model=OLLAMA_MODEL,
+                    prompt=prompt,
+                    # ← NO format="json" — allow full CoT output
+                    options=OLLAMA_OPTIONS,
+                )
+
+                # Resolve response object
+                if isinstance(response, dict):
+                    content = response.get('response', '')
+                else:
+                    content = getattr(response, 'response', '')
+
+                if not content or not content.strip():
+                    logger.warning(f"[GPU0] Attempt {attempt+1}: Empty response. Retrying…")
+                    time.sleep(1)
+                    continue
+
+                logger.debug(f"[GPU0] Raw response length: {len(content)} chars")
+
+                # ── Priority 1: extract between our explicit markers ──
+                marker_match = re.search(
+                    r'===JSON_START===\s*(.*?)\s*===JSON_END===',
+                    content, re.DOTALL
+                )
+                if marker_match:
+                    json_str = marker_match.group(1).strip()
+                    try:
+                        data = json.loads(json_str)
+                        if isinstance(data, list):
+                            raw_triples = [i for i in data if isinstance(i, dict)]
+                            valid = _validate_triples(raw_triples)
+                            if valid:
+                                logger.info(f"[GPU0] Attempt {attempt+1}: Extracted {len(valid)} valid triples.")
+                                return valid
+                            elif not raw_triples:
+                                # Model explicitly said no triples
+                                logger.info(f"[GPU0] Model found no medical relationships in this text.")
+                                return []
+                            # else: had triples but all failed validation → retry
+                            logger.warning(f"[GPU0] Attempt {attempt+1}: All triples failed validation. Retrying…")
+                            continue
+                    except json.JSONDecodeError:
+                        pass  # Fall through to robust extractor
+
+                # ── Priority 2: robust scan of full response ──
+                raw_list = _extract_json_from_text(content)
+                if raw_list is not None:
+                    if isinstance(raw_list, list):
+                        if not raw_list:
+                            logger.info(f"[GPU0] Attempt {attempt+1}: Model returned empty list.")
+                            return []
+                        valid = _validate_triples(raw_list)
+                        if valid:
+                            logger.info(f"[GPU0] Attempt {attempt+1}: Extracted {len(valid)} valid triples (fallback parser).")
+                            return valid
+                        logger.warning(f"[GPU0] Attempt {attempt+1}: Fallback triples failed validation. Retrying…")
+                        continue
+
+                logger.warning(f"[GPU0] Attempt {attempt+1}: No JSON found in response. Retrying…")
+                time.sleep(1)
+
+            except Exception as e:
+                logger.warning(f"[GPU0] Attempt {attempt+1} Exception: {e}")
+                time.sleep(2)
+
+        logger.error("[GPU0] All retries exhausted. Returning empty list.")
+        return []
+
+    # ── Neo4j storage ──────────────────────────────────────
+    def store_triples(self, triples: List[Dict]):
+        """Store multiple triples in a single Neo4j session for efficiency."""
+        if not triples or not self.neo4j_ok:
+            return
+            
+        try:
+            with self.driver.session() as session:
+                for triple in triples:
+                    head     = triple.get('head')
+                    h_type   = triple.get('head_type', 'Entity')
+                    rel      = triple.get('relation',  'RELATED_TO')
+                    tail     = triple.get('tail')
+                    t_type   = triple.get('tail_type', 'Entity')
+
+                    if not head or not tail:
+                        continue
+
+                    # Neo4j label must be alphanumeric
+                    h_label = re.sub(r'[^a-zA-Z0-9]', '', str(h_type)) or "Entity"
+                    if h_label[0].isdigit(): h_label = "L_" + h_label
+
+                    t_label = re.sub(r'[^a-zA-Z0-9]', '', str(t_type)) or "Entity"
+                    if t_label[0].isdigit(): t_label = "L_" + t_label
+
+                    # Sanitize relation
+                    rel_clean = re.sub(r'[^a-zA-Z0-9_]', '_', str(rel)).upper()
+                    rel_clean = re.sub(r'_+', '_', rel_clean).strip('_') or "RELATED_TO"
+                    if rel_clean[0].isdigit(): rel_clean = "R_" + rel_clean
+
+                    query = (
+                        f"MERGE (h:{h_label} {{name: $head}}) "
+                        f"MERGE (t:{t_label} {{name: $tail}}) "
+                        f"MERGE (h)-[r:{rel_clean}]->(t) "
+                    )
+                    session.run(query, head=head, tail=tail)
+        except Exception as e:
+            logger.error(f"[GPU0] Neo4j store error: {e}")
+            self.neo4j_ok = False
+
+    # ── Dataset processing ─────────────────────────────────
+    def process_entry(self, entry: Dict):
+        """Process a single entry from the dataset."""
+        entry_id = str(entry.get('id', '')).strip()
+        
+        with self.lock:
+            if not entry_id or entry_id in self.processed_ids:
+                return
+
+        raw_text = entry.get('response', '')
+        if not raw_text or not raw_text.strip():
+            self._save_checkpoint(entry_id)
+            return
+
+        cleaned_text = self.clean_text(raw_text)
+        triples = self.extract_triples(cleaned_text)
+
+        if triples:
+            # ── Persist to JSONL ──
+            try:
+                record = {"id": entry_id, "triples": triples}
+                line = json.dumps(record, ensure_ascii=False) + "\n"
+                with self.lock:
+                    self.output_file.write(line)
+                    self.output_file.flush()
+                logger.info(f"[GPU0] ID={entry_id}: Extracted {len(triples)} triples.")
+            except Exception as e:
+                logger.error(f"[GPU0] Failed to write to {OUTPUT_FILE}: {e}")
+
+            # ── Persist to Neo4j ──
+            self.store_triples(triples)
+
+        self._save_checkpoint(entry_id)
+
+    def process_dataset(self):
+        logger.info(f"[GPU0] Loading dataset from {DATASET_PATH} …")
+        try:
+            with open(DATASET_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.error(f"[GPU0] Could not load dataset: {e}")
+            return
+
+        total   = len(data)
+        with self.lock:
+            already = len(self.processed_ids)
+        
+        remaining_data = [e for e in data if str(e.get('id', '')).strip() not in self.processed_ids]
+        logger.info(f"[GPU0] {total} total | {already} done | {len(remaining_data)} remaining.")
+
+        if not remaining_data:
+            logger.info("[GPU0] No entries to process.")
+            return
+
+        # Use ThreadPoolExecutor for concurrent requests
+        # max_workers=3 is a safe balance for GPU 35b models to overlap I/O and compute
+        MAX_WORKERS = 3
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            list(tqdm(
+                executor.map(self.process_entry, remaining_data), 
+                total=len(remaining_data), 
+                desc="GPU0"
+            ))
+
+        logger.info("[GPU0] Pipeline finished successfully.")
+
+
+if __name__ == "__main__":
+    kg = KMCKnowledgeGraph()
+    try:
+        kg.process_dataset()
+    except KeyboardInterrupt:
+        logger.info("[GPU0] Process interrupted by user. Progress saved.")
+    except Exception as e:
+        logger.error(f"[GPU0] Fatal error: {e}")
+    finally:
+        kg.close()
+\end{lstlisting}
+
+\section{Knowledge Graph Generator (GPU 1)} \label{sec:gengpu1}
+\textbf{Purpose:} We use this script to extract medical triples from the second half of the Kurdish dataset using the Ollama service on GPU 1.
+
+\begin{lstlisting}[style=pythoncode, caption={kg\_generator\_gpu\_1.py}]
+import json
+import os
+import re
+import time
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Optional
+from tqdm import tqdm
+from ollama import Client
+from neo4j import GraphDatabase
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# ─────────────────────────────────────────────────────────
+# GPU 1  →  Ollama on port 11435
+# ─────────────────────────────────────────────────────────
+
+# Setup Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("kg_pipeline_gpu_1.log"),   # ← correct log file
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# ── Configuration ─────────────────────────────────────────
+OLLAMA_HOST   = os.getenv("OLLAMA_HOST_GPU1", "http://localhost:11435")  # ← GPU 1 port
+OLLAMA_MODEL  = "qwen3.6:35b"
+NEO4J_URI     = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
+NEO4J_USER    = os.getenv("NEO4J_USER",     "neo4j")
+NEO4J_PASSWORD= os.getenv("NEO4J_PASSWORD", "password")
+DATASET_PATH  = "kurdish_medical_corpus_kmc_part2.json"      # ← GPU 1 dataset half
+CHECKPOINT_PATH = "processed_ids_gpu_1.txt"                  # ← GPU 1 checkpoint
+OUTPUT_FILE   = "extracted_triples_gpu_1.jsonl"              # ← GPU 1 output
+
+# Qwen3 generation options – generous token budgets so CoT has room to breathe
+OLLAMA_OPTIONS = {
+    "temperature": 0.6,      # Qwen3 docs recommend 0.6 for balanced CoT
+    "top_p": 0.95,           # Qwen3 recommended value
+    "top_k": 20,             # Qwen3 recommended value
+    "min_p": 0,
+    "num_predict": 8192,     # Large budget: CoT + JSON output
+    "num_ctx": 16384,        # Context window – enough for long Kurdish texts + prompt
+    "repeat_penalty": 1.0,
+}
+
+# ── Robust JSON extractor ──────────────────────────────────
+def _extract_json_from_text(text: str) -> Optional[list]:
+    """
+    Extract the first JSON array from arbitrary text (including CoT reasoning).
+    Qwen3 thinks in <think>…</think> blocks before giving the answer;
+    we must scan the *entire* response for any valid JSON array.
+    """
+    if not text:
+        return None
+
+    # Strip think blocks if present (Qwen3 CoT)
+    text_no_think = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
+    # Prefer text after think block; fall back to full text
+    sources = [text_no_think, text] if text_no_think else [text]
+
+    for src in sources:
+        # Try to find a JSON array directly
+        for match in re.finditer(r'\[', src):
+            start = match.start()
+            depth = 0
+            for i, ch in enumerate(src[start:], start):
+                if ch == '[':
+                    depth += 1
+                elif ch == ']':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = src[start:i + 1]
+                        try:
+                            return json.loads(candidate)
+                        except json.JSONDecodeError:
+                            break
+
+        # Try wrapped in code block: ```json … ```
+        cb = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', src, re.DOTALL)
+        if cb:
+            try:
+                return json.loads(cb.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # Try a bare JSON object that IS a list item (dict)
+        for match in re.finditer(r'\{', src):
+            start = match.start()
+            depth = 0
+            for i, ch in enumerate(src[start:], start):
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = src[start:i + 1]
+                        try:
+                            obj = json.loads(candidate)
+                            if isinstance(obj, dict):
+                                return [obj]
+                        except json.JSONDecodeError:
+                            break
+
+    return None
+
+
+# ── Validation ─────────────────────────────────────────────
+VALID_TYPES = {
+    "Disease", "Symptom", "Treatment", "Medication",
+    "Anatomy", "Provider", "Organization"
+}
+
+def _validate_triples(raw_triples: list) -> List[Dict]:
+    """Strict quality gate: every triple must have non-empty head/relation/tail."""
+    valid = []
+    for t in raw_triples:
+        if not isinstance(t, dict):
+            continue
+        head      = str(t.get('head',      '')).strip()
+        relation  = str(t.get('relation',  '')).strip()
+        tail      = str(t.get('tail',      '')).strip()
+        head_type = str(t.get('head_type', 'Entity')).strip()
+        tail_type = str(t.get('tail_type', 'Entity')).strip()
+
+        if len(head) < 2 or len(tail) < 2 or len(relation) < 2:
+            continue
+
+        # Normalise types
+        if head_type not in VALID_TYPES:
+            head_type = 'Entity'
+        if tail_type not in VALID_TYPES:
+            tail_type = 'Entity'
+
+        valid.append({
+            "head":      head,
+            "head_type": head_type,
+            "relation":  relation,
+            "tail":      tail,
+            "tail_type": tail_type,
+        })
+    return valid
+
+
+# ── Main class ─────────────────────────────────────────────
+class KMCKnowledgeGraph:
+    def __init__(self):
+        logger.info(f"Connecting to Ollama at {OLLAMA_HOST} (GPU 1) …")
+        self.client = Client(host=OLLAMA_HOST)
+
+        # Warm-up: ensure model is loaded on GPU 1
+        try:
+            logger.info(f"Pre-loading model {OLLAMA_MODEL} on GPU 1 …")
+            self.client.generate(
+                model=OLLAMA_MODEL,
+                prompt="Hello",
+                options={"num_predict": 1}
+            )
+            logger.info("Model pre-loaded successfully.")
+        except Exception as e:
+            logger.warning(f"Model pre-load warning (continuing): {e}")
+
+        try:
+            self.driver = GraphDatabase.driver(
+                NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)
+            )
+            self.driver.verify_connectivity()
+            logger.info("Connected to Neo4j successfully.")
+        except Exception as e:
+            logger.error(f"Failed to connect to Neo4j: {e}")
+            raise
+
+        self.processed_ids = self._load_checkpoints()
+        self.lock = threading.RLock()
+        
+        # Persistent file handles for faster I/O
+        self.checkpoint_file = open(CHECKPOINT_PATH, 'a', encoding='utf-8')
+        self.output_file = open(OUTPUT_FILE, 'a', encoding='utf-8')
+        self.neo4j_ok = True
+
+    # ── Checkpointing ──────────────────────────────────────
+    def _load_checkpoints(self) -> set:
+        if os.path.exists(CHECKPOINT_PATH):
+            with open(CHECKPOINT_PATH, 'r', encoding='utf-8') as f:
+                return set(line.strip() for line in f if line.strip())
+        return set()
+
+    def _save_checkpoint(self, entry_id: str):
+        with self.lock:
+            self.checkpoint_file.write(f"{entry_id}\n")
+            self.checkpoint_file.flush()
+            self.processed_ids.add(entry_id)
+
+    def close(self):
+        try:
+            self.driver.close()
+        except:
+            pass
+        try:
+            self.checkpoint_file.close()
+            self.output_file.close()
+        except:
+            pass
+
+    # ── Text cleaning ──────────────────────────────────────
+    def clean_text(self, text: str) -> str:
+        if not text:
+            return ""
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+
+    # ── Triple extraction ──────────────────────────────────
+    def extract_triples(self, text: str, max_retries: int = 5) -> List[Dict]:
+        """
+        Extract knowledge-graph triples from Kurdish medical text.
+
+        KEY DESIGN DECISION for Qwen3.6:35b
+        ─────────────────────────────────────
+        • We do NOT pass format="json" to Ollama.
+          Qwen3 uses internal Chain-of-Thought (<think>…</think>) before
+          writing the final answer.  Forcing JSON mode suppresses that CoT
+          block which drastically hurts extraction quality and often produces
+          empty output.
+        • Instead we prompt the model to wrap its final JSON in a clear
+          delimiter (===JSON_START=== / ===JSON_END===) so our parser can
+          find it reliably even inside a long reasoning trace.
+        • num_predict is set to 8192 to give the CoT enough room.
+        """
+        prompt = (
+            "You are an elite Kurdish medical linguist and knowledge graph engineer.\n"
+            "Your task is to extract high-quality, semantically rich medical triples "
+            "from the provided Kurdish text.\n\n"
+
+            "CRITICAL QUALITY REQUIREMENTS:\n"
+            "1. LANGUAGE: All medical entities and relationships MUST be in natural, "
+            "accurate Kurdish (Sorani/Central Kurdish).\n"
+            "2. MEANINGFUL RELATIONS: Use precise medical verbs, never 'has' or 'is'.\n"
+            "   Examples:\n"
+            "   - 'دەبێتە هۆی'           (causes)\n"
+            "   - 'نیشانەیە بۆ'           (is a symptom of)\n"
+            "   - 'بەکاردێت بۆ چارەسەری'  (used for treatment of)\n"
+            "   - 'کاردەکاتە سەر'         (affects)\n"
+            "   - 'بەشێکە لە'            (is part of)\n"
+            "3. ENTITY TYPES: head_type and tail_type MUST be ONE of: "
+            "[Disease, Symptom, Treatment, Medication, Anatomy, Provider, Organization].\n"
+            "4. DATA INTEGRITY: Every triple MUST have a valid head, relation, and tail. "
+            "No empty strings.\n"
+            "5. COMPLETENESS: Extract ALL meaningful medical facts from the text. "
+            "Aim for at least 3-8 triples per passage if the text contains medical info.\n\n"
+
+            f"Kurdish Text:\n{text}\n\n"
+
+            "Think carefully about the medical entities and their relationships.\n"
+            "After your reasoning, output YOUR FINAL ANSWER between these exact markers:\n"
+            "===JSON_START===\n"
+            "[\n"
+            "  {\n"
+            '    "head": "Entity Name in Kurdish",\n'
+            '    "head_type": "English Label",\n'
+            '    "relation": "Detailed Kurdish Relationship",\n'
+            '    "tail": "Target Entity in Kurdish",\n'
+            '    "tail_type": "English Label"\n'
+            "  }\n"
+            "]\n"
+            "===JSON_END===\n\n"
+            "If the text contains NO meaningful medical relationships, output:\n"
+            "===JSON_START===\n"
+            "[]\n"
+            "===JSON_END==="
+        )
+
+        for attempt in range(max_retries):
+            try:
+                response = self.client.generate(
+                    model=OLLAMA_MODEL,
+                    prompt=prompt,
+                    # ← NO format="json" — allow full CoT output
+                    options=OLLAMA_OPTIONS,
+                )
+
+                # Resolve response object
+                if isinstance(response, dict):
+                    content = response.get('response', '')
+                else:
+                    content = getattr(response, 'response', '')
+
+                if not content or not content.strip():
+                    logger.warning(f"[GPU1] Attempt {attempt+1}: Empty response. Retrying…")
+                    time.sleep(1)
+                    continue
+
+                logger.debug(f"[GPU1] Raw response length: {len(content)} chars")
+
+                # ── Priority 1: extract between our explicit markers ──
+                marker_match = re.search(
+                    r'===JSON_START===\s*(.*?)\s*===JSON_END===',
+                    content, re.DOTALL
+                )
+                if marker_match:
+                    json_str = marker_match.group(1).strip()
+                    try:
+                        data = json.loads(json_str)
+                        if isinstance(data, list):
+                            raw_triples = [i for i in data if isinstance(i, dict)]
+                            valid = _validate_triples(raw_triples)
+                            if valid:
+                                logger.info(f"[GPU1] Attempt {attempt+1}: Extracted {len(valid)} valid triples.")
+                                return valid
+                            elif not raw_triples:
+                                # Model explicitly said no triples
+                                logger.info(f"[GPU1] Model found no medical relationships in this text.")
+                                return []
+                            # else: had triples but all failed validation → retry
+                            logger.warning(f"[GPU1] Attempt {attempt+1}: All triples failed validation. Retrying…")
+                            continue
+                    except json.JSONDecodeError:
+                        pass  # Fall through to robust extractor
+
+                # ── Priority 2: robust scan of full response ──
+                raw_list = _extract_json_from_text(content)
+                if raw_list is not None:
+                    if isinstance(raw_list, list):
+                        if not raw_list:
+                            logger.info(f"[GPU1] Attempt {attempt+1}: Model returned empty list.")
+                            return []
+                        valid = _validate_triples(raw_list)
+                        if valid:
+                            logger.info(f"[GPU1] Attempt {attempt+1}: Extracted {len(valid)} valid triples (fallback parser).")
+                            return valid
+                        logger.warning(f"[GPU1] Attempt {attempt+1}: Fallback triples failed validation. Retrying…")
+                        continue
+
+                logger.warning(f"[GPU1] Attempt {attempt+1}: No JSON found in response. Retrying…")
+                time.sleep(1)
+
+            except Exception as e:
+                logger.warning(f"[GPU1] Attempt {attempt+1} Exception: {e}")
+                time.sleep(2)
+
+        logger.error("[GPU1] All retries exhausted. Returning empty list.")
+        return []
+
+    # ── Neo4j storage ──────────────────────────────────────
+    def store_triples(self, triples: List[Dict]):
+        """Store multiple triples in a single Neo4j session for efficiency."""
+        if not triples or not self.neo4j_ok:
+            return
+            
+        try:
+            with self.driver.session() as session:
+                for triple in triples:
+                    head     = triple.get('head')
+                    h_type   = triple.get('head_type', 'Entity')
+                    rel      = triple.get('relation',  'RELATED_TO')
+                    tail     = triple.get('tail')
+                    t_type   = triple.get('tail_type', 'Entity')
+
+                    if not head or not tail:
+                        continue
+
+                    # Neo4j label must be alphanumeric
+                    h_label = re.sub(r'[^a-zA-Z0-9]', '', str(h_type)) or "Entity"
+                    if h_label[0].isdigit(): h_label = "L_" + h_label
+
+                    t_label = re.sub(r'[^a-zA-Z0-9]', '', str(t_type)) or "Entity"
+                    if t_label[0].isdigit(): t_label = "L_" + t_label
+
+                    # Sanitize relation
+                    rel_clean = re.sub(r'[^a-zA-Z0-9_]', '_', str(rel)).upper()
+                    rel_clean = re.sub(r'_+', '_', rel_clean).strip('_') or "RELATED_TO"
+                    if rel_clean[0].isdigit(): rel_clean = "R_" + rel_clean
+
+                    query = (
+                        f"MERGE (h:{h_label} {{name: $head}}) "
+                        f"MERGE (t:{t_label} {{name: $tail}}) "
+                        f"MERGE (h)-[r:{rel_clean}]->(t) "
+                    )
+                    session.run(query, head=head, tail=tail)
+        except Exception as e:
+            logger.error(f"[GPU1] Neo4j store error: {e}")
+            self.neo4j_ok = False
+
+    # ── Dataset processing ─────────────────────────────────
+    def process_entry(self, entry: Dict):
+        """Process a single entry from the dataset."""
+        entry_id = str(entry.get('id', '')).strip()
+        
+        with self.lock:
+            if not entry_id or entry_id in self.processed_ids:
+                return
+
+        raw_text = entry.get('response', '')
+        if not raw_text or not raw_text.strip():
+            self._save_checkpoint(entry_id)
+            return
+
+        cleaned_text = self.clean_text(raw_text)
+        triples = self.extract_triples(cleaned_text)
+
+        if triples:
+            # ── Persist to JSONL ──
+            try:
+                record = {"id": entry_id, "triples": triples}
+                line = json.dumps(record, ensure_ascii=False) + "\n"
+                with self.lock:
+                    self.output_file.write(line)
+                    self.output_file.flush()
+                logger.info(f"[GPU1] ID={entry_id}: Extracted {len(triples)} triples.")
+            except Exception as e:
+                logger.error(f"[GPU1] Failed to write to {OUTPUT_FILE}: {e}")
+
+            # ── Persist to Neo4j ──
+            self.store_triples(triples)
+
+        self._save_checkpoint(entry_id)
+
+    def process_dataset(self):
+        logger.info(f"[GPU1] Loading dataset from {DATASET_PATH} …")
+        try:
+            with open(DATASET_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.error(f"[GPU1] Could not load dataset: {e}")
+            return
+
+        total   = len(data)
+        with self.lock:
+            already = len(self.processed_ids)
+        
+        remaining_data = [e for e in data if str(e.get('id', '')).strip() not in self.processed_ids]
+        logger.info(f"[GPU1] {total} total | {already} done | {len(remaining_data)} remaining.")
+
+        if not remaining_data:
+            logger.info("[GPU1] No entries to process.")
+            return
+
+        # Use ThreadPoolExecutor for concurrent requests
+        # max_workers=3 is a safe balance for GPU 35b models to overlap I/O and compute
+        MAX_WORKERS = 3
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            list(tqdm(
+                executor.map(self.process_entry, remaining_data), 
+                total=len(remaining_data), 
+                desc="GPU1"
+            ))
+
+        logger.info("[GPU1] Pipeline finished successfully.")
+
+
+if __name__ == "__main__":
+    kg = KMCKnowledgeGraph()
+    try:
+        kg.process_dataset()
+    except KeyboardInterrupt:
+        logger.info("[GPU1] Process interrupted by user. Progress saved.")
+    except Exception as e:
+        logger.error(f"[GPU1] Fatal error: {e}")
+    finally:
+        kg.close()
+\end{lstlisting}
+
+\section{Run KG Script (GPU 0)} \label{sec:runkg0}
+\textbf{Purpose:} A shell script to execute the GPU 0 knowledge graph generator in the background.
+
+\begin{lstlisting}[style=bashcode, caption={run\_kg\_gpu\_0.sh}]
+#!/bin/bash
+
+# Check if virtual environment exists and activate it
+if [ -d ".venv" ]; then
+    echo "Activating virtual environment..."
+    source .venv/bin/activate
+elif [ -d "venv" ]; then
+    echo "Activating virtual environment (venv)..."
+    source venv/bin/activate
+fi
+
+# Run the kg_generator_gpu_0.py in the background
+# We use -u for unbuffered output to ensure logs appear in real-time
+export PYTHONUNBUFFERED=1
+nohup python3 -u kg_generator_gpu_0.py > kg_console_gpu_0.log 2>&1 &
+
+PID=$!
+echo "--------------------------------------------------"
+echo "KG Generator (GPU 0) started in background."
+echo "PID: $PID"
+echo "Console output: kg_console_gpu_0.log"
+echo "To stop the process, run: kill $PID"
+echo "--------------------------------------------------"
+\end{lstlisting}
+
+\section{Run KG Script (GPU 1)} \label{sec:runkg1}
+\textbf{Purpose:} A shell script to execute the GPU 1 knowledge graph generator in the background.
+
+\begin{lstlisting}[style=bashcode, caption={run\_kg\_gpu\_1.sh}]
+#!/bin/bash
+
+# Check if virtual environment exists and activate it
+if [ -d ".venv" ]; then
+    echo "Activating virtual environment..."
+    source .venv/bin/activate
+elif [ -d "venv" ]; then
+    echo "Activating virtual environment (venv)..."
+    source venv/bin/activate
+fi
+
+# Run the kg_generator_gpu_1.py in the background
+# We use -u for unbuffered output to ensure logs appear in real-time
+export PYTHONUNBUFFERED=1
+nohup python3 -u kg_generator_gpu_1.py > kg_console_gpu_1.log 2>&1 &
+
+PID=$!
+echo "--------------------------------------------------"
+echo "KG Generator (GPU 1) started in background."
+echo "PID: $PID"
+echo "Console output: kg_console_gpu_1.log"
+echo "To stop the process, run: kill $PID"
+echo "--------------------------------------------------"
+\end{lstlisting}
+
+\section{Stop KG Script} \label{sec:stopkg}
+\textbf{Purpose:} Gracefully stops the background Python generator processes and terminates any stray Ollama server instances.
+
+\begin{lstlisting}[style=bashcode, caption={stop\_kg.sh}]
+#!/bin/bash
+
+# ==============================================================================
+# KMC Knowledge Graph Pipeline Shutdown Script
+# ==============================================================================
+
+echo "--------------------------------------------------"
+echo "🛑 Initiating shutdown of KG Pipeline and Models..."
+echo "--------------------------------------------------"
+
+# 1. Stop Python Generators
+stop_python_process() {
+    local script_name=$1
+    local gpu_id=$2
+    local pid=$(pgrep -f "python3.*$script_name")
+    
+    if [ -n "$pid" ]; then
+        echo "[*] GPU $gpu_id: Stopping $script_name (PID: $pid)..."
+        kill $pid
+        sleep 2
+        # Force kill if still running
+        if ps -p $pid > /dev/null; then
+            echo "[!] GPU $gpu_id: Process persistent. Force killing..."
+            kill -9 $pid
+        fi
+    else
+        echo "[-] GPU $gpu_id: No generator process found for $script_name."
+    fi
+}
+
+stop_python_process "kg_generator_gpu_0.py" 0
+stop_python_process "kg_generator_gpu_1.py" 1
+
+# 2. Stop Ollama Instances
+echo "[*] Cleaning up Ollama server and model instances..."
+if pgrep -f "ollama" > /dev/null; then
+    echo "[!] Found active Ollama processes. Terminating..."
+    pkill -f "ollama"
+    sleep 3
+    # Check again and force kill if necessary
+    if pgrep -f "ollama" > /dev/null; then
+        echo "[!] Some Ollama processes are stuck. Force killing all..."
+        pkill -9 -f "ollama"
+    fi
+    echo "[+] Ollama processes terminated."
+else
+    echo "[-] No Ollama processes found."
+fi
+
+echo "--------------------------------------------------"
+echo "✅ Shutdown complete."
+\end{lstlisting}
+
+\section{Setup Script} \label{sec:setup}
+\textbf{Purpose:} We use this shell script to prepare the environment, install required Python dependencies from \texttt{requirements.txt}, initialize a Neo4j Docker container, and verify the Ollama installation and model availability.
+
+\begin{lstlisting}[style=bashcode, caption={setup.sh}]
+#!/bin/bash
+
+# KMC Knowledge Graph Setup Script
+
+echo "🚀 Starting setup for KMC Knowledge Graph Pipeline..."
+
+# 1. Check for Python
+if ! command -v python3 &> /dev/null; then
+    echo "❌ Python3 is not installed. Please install it first."
+    exit 1
+fi
+
+# 2. Install Requirements
+echo "📥 Installing dependencies from requirements.txt..."
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# 3. Docker and Neo4j Setup
+echo "🐳 Checking Docker status..."
+if ! command -v docker &> /dev/null; then
+    echo "📥 Docker not found. Installing Docker..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    sudo usermod -aG docker $USER
+    rm get-docker.sh
+    DOCKER_CMD="sudo docker"
+    echo "✅ Docker installed. Using 'sudo docker' for this session."
+else
+    DOCKER_CMD="docker"
+fi
+
+echo "🚢 Setting up Neo4j container..."
+if ! $DOCKER_CMD ps -a --format '{{.Names}}' | grep -q "^neo4j-kmc$"; then
+    $DOCKER_CMD run -d \
+        --name neo4j-kmc \
+        -p 7474:7474 -p 7687:7687 \
+        -e NEO4J_AUTH=neo4j/password \
+        -e NEO4J_PLUGINS='["apoc"]' \
+        --restart always \
+        neo4j:latest
+    echo "✅ Neo4j started. Access it at http://localhost:7474"
+else
+    echo "✅ Neo4j container 'neo4j-kmc' already exists."
+    if [ "$($DOCKER_CMD inspect -f '{{.State.Running}}' neo4j-kmc)" != "true" ]; then
+        echo "🔄 Starting Neo4j container..."
+        $DOCKER_CMD start neo4j-kmc
+    fi
+fi
+
+# 4. Check for Ollama
+if ! command -v ollama &> /dev/null; then
+    echo "⚠️ Ollama not found in PATH. Please install it from https://ollama.com"
+else
+    if ollama list | grep -q "qwen3.6:35b"; then
+        echo "✅ Model qwen3.6:35b already exists in Ollama."
+    else
+        echo "🧠 Pulling Qwen model (qwen3.6:35b)..."
+        ollama pull qwen3.6:35b
+    fi
+fi
+
+# 5. Create .env template if it doesn't exist
+if [ ! -f .env ]; then
+    echo "📝 Creating .env template..."
+    echo "NEO4J_URI=bolt://localhost:7687" > .env
+    echo "NEO4J_USER=neo4j" >> .env
+    echo "NEO4J_PASSWORD=password" >> .env
+fi
+
+echo "✅ Setup complete!"
+echo "💡 You can now run the pipeline: 'python kg_generator.py'"
+\end{lstlisting}
+
+\section{Setup Runner} \label{sec:runsetup}
+\textbf{Purpose:} A Python utility script to launch the \texttt{setup.sh} installation routine in a detached background process.
+
+\begin{lstlisting}[style=pythoncode, caption={run\_setup.py}]
+import subprocess
+import os
+import sys
+
+def run_setup_background():
+    """
+    Runs setup.sh in the background and redirects all output to setup.log.
+    Designed for execution on an Ubuntu server.
+    """
+    script_name = "setup.sh"
+    log_name = "setup.log"
+    
+    # Check if setup.sh exists
+    if not os.path.exists(script_name):
+        print(f"❌ Error: {script_name} not found in the current directory.")
+        return
+
+    # Ensure the script is executable
+    os.chmod(script_name, 0o755)
+
+    print(f"🚀 Launching {script_name} in the background...")
+    print(f"📋 Output will be logged to {log_name}")
+
+    try:
+        # Open the log file for writing
+        with open(log_name, "w") as log_file:
+            # subprocess.Popen starts the process without waiting for it to finish
+            # We use 'bash' explicitly to ensure it runs correctly on Ubuntu
+            process = subprocess.Popen(
+                ["bash", script_name],
+                stdout=log_file,
+                stderr=subprocess.STDOUT, # Redirect stderr to the same log file
+                start_new_session=True    # Detach from the current terminal session
+            )
+        
+        print(f"✅ Setup background process started successfully!")
+        print(f"🆔 PID: {process.pid}")
+        print(f"💡 You can monitor progress with: tail -f {log_name}")
+
+    except Exception as e:
+        print(f"❌ Failed to start the setup process: {e}")
+
+if __name__ == "__main__":
+    run_setup_background()
+\end{lstlisting}
+
+\section{Model Loader (GPU 0)} \label{sec:loader0}
+\textbf{Purpose:} A sophisticated bash script to trigger the loading of the Qwen model into GPU 0 memory in the background and verify its active status via polling.
+
+\begin{lstlisting}[style=bashcode, caption={load\_model\_gpu\_0.sh}]
+#!/bin/bash
+
+# ==============================================================================
+# Ollama Model GPU Loader & Verification Script (GPU 0)
+# ==============================================================================
+# Description: This script triggers the loading of an Ollama model into GPU 0
+#              memory in the background and verifies the status.
+# ==============================================================================
+
+# --- Configuration ---
+MODEL_NAME="qwen3.6:35b"
+LOG_FILE="ollama_gpu_0_load.txt"
+GPU_ID=0  # The index of the GPU to use
+OLLAMA_PORT=11434
+
+# ANSI Color Codes for Premium UI
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Header
+echo -e "${CYAN}${BOLD}======================================================${NC}"
+echo -e "${CYAN}${BOLD}       OLLAMA GPU 0 LOAD & TEST UTILITY               ${NC}"
+echo -e "${CYAN}${BOLD}======================================================${NC}"
+
+# Initialize log file
+echo "--- Ollama GPU 0 Load Session: $(date) ---" > "$LOG_FILE"
+
+# --- Function: Ensure Server is Running ---
+ensure_server_running() {
+    echo -e "${YELLOW}[*] Action: Checking Ollama server status on port $OLLAMA_PORT...${NC}"
+    
+    if curl -s "http://localhost:$OLLAMA_PORT/api/tags" > /dev/null 2>&1; then
+        echo -e "${GREEN}[+] Ollama server is already active on port $OLLAMA_PORT.${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}[!] Ollama server not detected on port $OLLAMA_PORT. Starting isolated instance...${NC}"
+    
+    # CRITICAL: Set CUDA_VISIBLE_DEVICES for the SERVER process
+    export CUDA_VISIBLE_DEVICES=$GPU_ID
+    export OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT"
+    
+    # Start server in background
+    nohup ollama serve >> "$LOG_FILE" 2>&1 &
+
+    # Wait and verify status
+    echo -n "Waiting for API availability"
+    for i in {1..20}; do
+        echo -n "."
+        if curl -s "http://localhost:$OLLAMA_PORT/api/tags" > /dev/null 2>&1; then
+            echo -e "\n${GREEN}[SUCCESS] Ollama server (GPU $GPU_ID) is up!${NC}" | tee -a "$LOG_FILE"
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo -e "\n${RED}[ERROR] Server failed to start within 40 seconds.${NC}" | tee -a "$LOG_FILE"
+    exit 1
+}
+
+# --- Function: Load Model ---
+load_to_gpu_bg() {
+    echo -e "${YELLOW}[*] Action: Triggering model load for '$MODEL_NAME' on port $OLLAMA_PORT...${NC}"
+    
+    # Trigger a run with empty input to force the model into VRAM
+    export OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT"
+    nohup ollama run $MODEL_NAME "" >> "$LOG_FILE" 2>&1 &
+    
+    BG_PID=$!
+    echo -e "${GREEN}[+] Load command dispatched (PID: $BG_PID).${NC}" | tee -a "$LOG_FILE"
+}
+
+# --- Function: Verification Test ---
+run_verification_test() {
+    echo -e "\n${YELLOW}[*] Action: Verifying GPU VRAM status...${NC}"
+    echo -n "Waiting for model initialization"
+    
+    MAX_ATTEMPTS=12
+    SUCCESS=false
+    
+    for ((i=1; i<=MAX_ATTEMPTS; i++)); do
+        echo -n "."
+        if OLLAMA_HOST="localhost:$OLLAMA_PORT" ollama ps 2>/dev/null | grep -q "$MODEL_NAME"; then
+            echo -e "\n${GREEN}${BOLD}[SUCCESS] Model '$MODEL_NAME' is active in GPU memory!${NC}" | tee -a "$LOG_FILE"
+            SUCCESS=true
+            break
+        fi
+        sleep 5
+    done
+
+    if [ "$SUCCESS" = true ]; then
+        echo -e "${BLUE}------------------------------------------------------${NC}"
+        echo -e "${BOLD}Current GPU Load Status (Port $OLLAMA_PORT):${NC}"
+        OLLAMA_HOST="localhost:$OLLAMA_PORT" ollama ps | grep -E "NAME|${MODEL_NAME}"
+        echo -e "${BLUE}------------------------------------------------------${NC}"
+        return 0
+    else
+        echo -e "\n${RED}${BOLD}[FAILURE] Model verification timed out.${NC}" | tee -a "$LOG_FILE"
+        return 1
+    fi
+}
+
+# --- Main Execution ---
+ensure_server_running
+load_to_gpu_bg
+run_verification_test
+
+echo -e "\n${CYAN}Done.${NC}"
+\end{lstlisting}
+
+\section{Model Loader (GPU 1)} \label{sec:loader1}
+\textbf{Purpose:} A sophisticated bash script to trigger the loading of the Qwen model into GPU 1 memory in the background and verify its active status via polling.
+
+\begin{lstlisting}[style=bashcode, caption={load\_model\_gpu\_1.sh}]
+#!/bin/bash
+
+# ==============================================================================
+# Ollama Model GPU Loader & Verification Script (GPU 1)
+# ==============================================================================
+# Description: This script triggers the loading of an Ollama model into GPU 1
+#              memory in the background and verifies the status.
+# ==============================================================================
+
+# --- Configuration ---
+MODEL_NAME="qwen3.6:35b"
+LOG_FILE="ollama_gpu_1_load.txt"
+GPU_ID=1  # The index of the GPU to use
+OLLAMA_PORT=11435
+
+# ANSI Color Codes for Premium UI
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Header
+echo -e "${CYAN}${BOLD}======================================================${NC}"
+echo -e "${CYAN}${BOLD}       OLLAMA GPU 1 LOAD & TEST UTILITY               ${NC}"
+echo -e "${CYAN}${BOLD}======================================================${NC}"
+
+# Initialize log file
+echo "--- Ollama GPU 1 Load Session: $(date) ---" > "$LOG_FILE"
+
+# --- Function: Ensure Server is Running ---
+ensure_server_running() {
+    echo -e "${YELLOW}[*] Action: Checking Ollama server status on port $OLLAMA_PORT...${NC}"
+    
+    if curl -s "http://localhost:$OLLAMA_PORT/api/tags" > /dev/null 2>&1; then
+        echo -e "${GREEN}[+] Ollama server is already active on port $OLLAMA_PORT.${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}[!] Ollama server not detected on port $OLLAMA_PORT. Starting isolated instance...${NC}"
+    
+    # CRITICAL: Set CUDA_VISIBLE_DEVICES for the SERVER process
+    export CUDA_VISIBLE_DEVICES=$GPU_ID
+    export OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT"
+    
+    # Start server in background
+    nohup ollama serve >> "$LOG_FILE" 2>&1 &
+
+    # Wait and verify status
+    echo -n "Waiting for API availability"
+    for i in {1..20}; do
+        echo -n "."
+        if curl -s "http://localhost:$OLLAMA_PORT/api/tags" > /dev/null 2>&1; then
+            echo -e "\n${GREEN}[SUCCESS] Ollama server (GPU $GPU_ID) is up!${NC}" | tee -a "$LOG_FILE"
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo -e "\n${RED}[ERROR] Server failed to start within 40 seconds.${NC}" | tee -a "$LOG_FILE"
+    exit 1
+}
+
+# --- Function: Load Model ---
+load_to_gpu_bg() {
+    echo -e "${YELLOW}[*] Action: Triggering model load for '$MODEL_NAME' on port $OLLAMA_PORT...${NC}"
+    
+    # Trigger a run with empty input to force the model into VRAM
+    export OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT"
+    nohup ollama run $MODEL_NAME "" >> "$LOG_FILE" 2>&1 &
+    
+    BG_PID=$!
+    echo -e "${GREEN}[+] Load command dispatched (PID: $BG_PID).${NC}" | tee -a "$LOG_FILE"
+}
+
+# --- Function: Verification Test ---
+run_verification_test() {
+    echo -e "\n${YELLOW}[*] Action: Verifying GPU VRAM status...${NC}"
+    echo -n "Waiting for model initialization"
+    
+    MAX_ATTEMPTS=12
+    SUCCESS=false
+    
+    for ((i=1; i<=MAX_ATTEMPTS; i++)); do
+        echo -n "."
+        if OLLAMA_HOST="localhost:$OLLAMA_PORT" ollama ps 2>/dev/null | grep -q "$MODEL_NAME"; then
+            echo -e "\n${GREEN}${BOLD}[SUCCESS] Model '$MODEL_NAME' is active in GPU memory!${NC}" | tee -a "$LOG_FILE"
+            SUCCESS=true
+            break
+        fi
+        sleep 5
+    done
+
+    if [ "$SUCCESS" = true ]; then
+        echo -e "${BLUE}------------------------------------------------------${NC}"
+        echo -e "${BOLD}Current GPU Load Status (Port $OLLAMA_PORT):${NC}"
+        OLLAMA_HOST="localhost:$OLLAMA_PORT" ollama ps | grep -E "NAME|${MODEL_NAME}"
+        echo -e "${BLUE}------------------------------------------------------${NC}"
+        return 0
+    else
+        echo -e "\n${RED}${BOLD}[FAILURE] Model verification timed out.${NC}" | tee -a "$LOG_FILE"
+        return 1
+    fi
+}
+
+# --- Main Execution ---
+ensure_server_running
+load_to_gpu_bg
+run_verification_test
+
+echo -e "\n${CYAN}Done.${NC}"
+\end{lstlisting}
+
+\section{Requirements} \label{sec:requirements}
+\textbf{Purpose:} Defines the required Python packages for running the dual-GPU knowledge graph pipeline.
+
+\begin{lstlisting}[style=bashcode, caption={requirements.txt}]
+neo4j
+ollama
+python-dotenv
+tqdm
+\end{lstlisting}
+
+\end{document}

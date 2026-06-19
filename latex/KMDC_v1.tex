@@ -1,0 +1,1277 @@
+%!TEX TS-program = xelatex
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{fontspec}
+
+\newfontfamily\kurdishfont[Script=Arabic]{Amiri}
+% For code listings: FreeMono keeps brackets clear and supports Kurdish text.
+\newfontfamily\codemonofont{FreeMono}
+\newcommand{\codeleftparen}{{\codemonofont(}}
+\newcommand{\coderightparen}{{\codemonofont)}}
+\newcommand{\codeleftbracket}{{\codemonofont[}}
+\newcommand{\coderightbracket}{{\codemonofont]}}
+\newcommand{\codeleftbrace}{{\codemonofont\char`\{}}
+\newcommand{\coderightbrace}{{\codemonofont\char`\}}}
+
+\usepackage{hyperref}
+\usepackage{booktabs}
+
+% Core packages
+\usepackage{amsmath,amssymb}
+\usepackage{tikz-cd}
+\usepackage{multicol}
+\usepackage{xcolor}
+\usepackage{listings}
+
+% Code listings
+\lstdefinestyle{pythoncode}{
+  language=Python,
+  basicstyle=\footnotesize\codemonofont,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{orange!50!black},
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true,
+  tabsize=4,
+  frame=single,
+  numbers=left,
+  numberstyle=\scriptsize\codemonofont\color{gray},
+  stepnumber=1,
+  numbersep=10pt,
+  extendedchars=false,
+  literate=
+    {(}{{\codeleftparen}}1
+    {)}{{\coderightparen}}1
+    {[}{{\codeleftbracket}}1
+    {]}{{\coderightbracket}}1
+    {\{}{{\codeleftbrace}}1
+    {\}}{{\coderightbrace}}1
+}
+
+% Paragraphs
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1\baselineskip}
+
+\title{Dataset Processing and Maintenance Toolkit}
+\author{Data Engineering Team}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Overview}
+
+This document contains a comprehensive toolkit of Python scripts utilized for cleaning, merging, and maintaining the dataset. Below is a summary table containing links to the code for each step in the pipeline, alongside an explanation of its purpose.
+
+\begin{table}[htbp]
+\centering
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{} l l p{9cm} @{}}
+\toprule
+\textbf{Script Name} & \textbf{Section Link} & \textbf{Purpose / Why We Use It} \\
+\midrule
+
+\multicolumn{3}{@{}l}{\textbf{Data Processing \& Merging}} \\
+\midrule
+Dataset Cleaner & \hyperref[sec:cleaner]{Section \ref*{sec:cleaner}} & Removes duplicate entries, strips unnecessary whitespace, and ensures structural integrity of the final JSON data. \\
+JSON Collector & \hyperref[sec:collector]{Section \ref*{sec:collector}} & Aggregates scattered finalized JSON files from multiple nested directories into a single consolidated directory, handling collisions automatically. \\
+Number Converter & \hyperref[sec:converter]{Section \ref*{sec:converter}} & Standardizes the dataset by transforming Western Arabic numerals (0-9) into Eastern Arabic/Kurdish numerals (0-9) for regional consistency. \\
+Dataset Merger & \hyperref[sec:merger]{Section \ref*{sec:merger}} & Combines two major dataset segments into a single file while strictly removing overlaps and missing or malformed records. \\
+Batch JSON Merger & \hyperref[sec:batchmerger]{Section \ref*{sec:batchmerger}} & Processes a directory of hundreds of JSON files and consolidates them into one large, unified dataset file while removing irrelevant metadata. \\
+\addlinespace
+
+\multicolumn{3}{@{}l}{\textbf{Translation Pipeline}} \\
+\midrule
+Category Translator & \hyperref[sec:translator]{Section \ref*{sec:translator}} & Leverages external APIs and local rules to dynamically translate categories to standardized English. \\
+Advanced Offline Translator & \hyperref[sec:advancedtranslator]{Section \ref*{sec:advancedtranslator}} & Performs advanced word-level decomposition, rule-based extraction, and parallel translation for complex terms. \\
+Fallback Translator & \hyperref[sec:fallbacktranslator]{Section \ref*{sec:fallbacktranslator}} & Provides a secondary translation layer targeting only the most resistant non-English categories. \\
+\addlinespace
+
+\multicolumn{3}{@{}l}{\textbf{Category Management \& Analysis}} \\
+\midrule
+Category Sanitizer & \hyperref[sec:sanitizer]{Section \ref*{sec:sanitizer}} & Removes non-ASCII characters, trailing symbols, and normalizes typographic apostrophes. \\
+Category Cleaner & \hyperref[sec:catcleaner]{Section \ref*{sec:catcleaner}} & Applies a hard-coded mapping dictionary to definitively resolve stubborn non-English categories. \\
+Category Analyzer & \hyperref[sec:analyzer]{Section \ref*{sec:analyzer}} & Scans the dataset for language distribution and provides an overview of category complexity. \\
+Category Counter & \hyperref[sec:counter]{Section \ref*{sec:counter}} & A lightweight script to count unique categories and identify non-English entries requiring translation. \\
+\addlinespace
+
+\multicolumn{3}{@{}l}{\textbf{Inspection Tools}} \\
+\midrule
+JSON Inspector & \hyperref[sec:inspector]{Section \ref*{sec:inspector}} & Deeply inspects the JSON structure of the dataset to verify schemas and formatting. \\
+Remaining Inspector & \hyperref[sec:remaininspector]{Section \ref*{sec:remaininspector}} & Focuses specifically on inspecting categories that failed automated translations, returning frequencies. \\
+\addlinespace
+
+\multicolumn{3}{@{}l}{\textbf{Artifact Maintenance}} \\
+\midrule
+Artifact Cleaner & \hyperref[sec:artifactcleaner]{Section \ref*{sec:artifactcleaner}} & Cleans and standardizes generated markdown artifacts to ensure translation consistency. \\
+Artifact Updater & \hyperref[sec:updater]{Section \ref*{sec:updater}} & A supplementary tool designed to patch the translation markdown artifacts with specific fallback mappings. \\
+\bottomrule
+\end{tabular}
+\caption{Dataset processing scripts categorized by their functional domain.}
+\end{table}
+
+\clearpage
+
+\section{Dataset Cleaner} \label{sec:cleaner}
+\textbf{Purpose:} We use this script to ensure that the final dataset contains no blank fields or duplicate question-response pairs. It cleans the raw text by normalizing spaces and stripping whitespace, thus dramatically improving dataset quality for downstream tasks.
+
+\begin{lstlisting}[style=pythoncode, caption={dataset\_cleaner.py}]
+import json
+import re
+import os
+
+input_file = 'data/merged_final.json'
+output_file = 'data/merged_final_cleaned.json'
+
+def clean_text(text):
+    if not isinstance(text, str):
+        return ""
+    # Remove leading and trailing whitespace
+    text = text.strip()
+    # Replace multiple spaces with a single space
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+def clean_dataset():
+    print(f"Loading dataset from {input_file}...")
+    with open(input_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    initial_count = len(data)
+    print(f"Initial record count: {initial_count}")
+    
+    cleaned_data = []
+    seen = set()
+    
+    for item in data:
+        # Check if question and response exist
+        q = item.get('question', '')
+        r = item.get('response', '')
+        
+        # Clean texts
+        cleaned_q = clean_text(q)
+        cleaned_r = clean_text(r)
+        
+        # Skip if either is empty
+        if not cleaned_q or not cleaned_r:
+            continue
+            
+        # Deduplication based on question and response
+        pair_key = (cleaned_q, cleaned_r)
+        if pair_key in seen:
+            continue
+        seen.add(pair_key)
+        
+        # Update item with cleaned texts
+        item['question'] = cleaned_q
+        item['response'] = cleaned_r
+        
+        cleaned_data.append(item)
+        
+    final_count = len(cleaned_data)
+    print(f"Final record count: {final_count}")
+    print(f"Removed records: {initial_count - final_count}")
+    
+    print(f"Saving cleaned dataset to {output_file}...")
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(cleaned_data, f, ensure_ascii=False, indent=2)
+    print("Done!")
+
+if __name__ == "__main__":
+    clean_dataset()
+\end{lstlisting}
+
+
+\section{JSON Collector} \label{sec:collector}
+\textbf{Purpose:} In distributed pipelines, outputs often reside in separate directories. This script is used to safely collect all files bearing the \texttt{\_FINAL.json} suffix into one master folder. It performs content comparisons to ensure no data is lost or redundantly copied during naming collisions.
+
+\begin{lstlisting}[style=pythoncode, caption={json\_collector.py}]
+import os
+import shutil
+import filecmp
+import sys
+
+def collect_files(source_dir, target_dir):
+    # Ensure target directory exists
+    os.makedirs(target_dir, exist_ok=True)
+    
+    # Resolve absolute paths to compare them properly
+    source_dir = os.path.abspath(source_dir)
+    target_dir = os.path.abspath(target_dir)
+    
+    copied_count = 0
+    collision_count = 0
+    skipped_count = 0
+    
+    print(f"Scanning '{source_dir}' for JSON files ending with '_FINAL.json'...")
+    
+    for root, dirs, files in os.walk(source_dir):
+        # Exclude the target directory from search to avoid double processing
+        if os.path.abspath(root).startswith(target_dir):
+            continue
+            
+        for file in files:
+            if file.endswith('_FINAL.json'):
+                src_path = os.path.join(root, file)
+                dest_path = os.path.join(target_dir, file)
+                
+                already_copied = False
+                is_collision = False
+                
+                if os.path.exists(dest_path):
+                    # Check if the existing file has identical content
+                    if filecmp.cmp(src_path, dest_path, shallow=False):
+                        already_copied = True
+                    else:
+                        # Naming collision with different content, check numbered files
+                        name, ext = os.path.splitext(file)
+                        counter = 1
+                        while True:
+                            check_path = os.path.join(target_dir, f"{name}_{counter}{ext}")
+                            if os.path.exists(check_path):
+                                if filecmp.cmp(src_path, check_path, shallow=False):
+                                    already_copied = True
+                                    break
+                            else:
+                                dest_path = check_path
+                                is_collision = True
+                                break
+                            counter += 1
+                
+                if already_copied:
+                    skipped_count += 1
+                    continue
+                
+                if is_collision:
+                    collision_count += 1
+                
+                # Copy the file
+                shutil.copy2(src_path, dest_path)
+                print(f"Copied: {src_path} -> {dest_path}")
+                copied_count += 1
+                
+    print("\nSummary:")
+    print(f"Total files copied: {copied_count}")
+    print(f"Total duplicate files skipped: {skipped_count}")
+    if collision_count > 0:
+        print(f"Naming collisions resolved: {collision_count}")
+
+if __name__ == '__main__':
+    src = sys.argv[1] if len(sys.argv) > 1 else 'data/raw_backups'
+    dst = sys.argv[2] if len(sys.argv) > 2 else 'data/all_final_jsons'
+    collect_files(src, dst)
+\end{lstlisting}
+
+
+\section{Number Converter} \label{sec:converter}
+\textbf{Purpose:} We use this tool to enforce regional typographical standards. It parses all text in the dataset and converts standard Western numerals into Eastern Arabic (Kurdish) digits, ensuring the resulting dataset follows the native language's formatting rules.
+
+\begin{lstlisting}[style=pythoncode, caption={number\_converter.py}]
+import json
+import os
+
+def convert_to_ckb_numbers(text):
+    if not isinstance(text, str):
+        return text
+        
+    kurdish_digits = {
+        '0': '٠',
+        '1': '١',
+        '2': '٢',
+        '3': '٣',
+        '4': '٤',
+        '5': '٥',
+        '6': '٦',
+        '7': '٧',
+        '8': '٨',
+        '9': '٩'
+    }
+    
+    result = ""
+    for char in text:
+        if char in kurdish_digits:
+            result += kurdish_digits[char]
+        else:
+            result += char
+    return result
+
+def main():
+    file_path = 'data/merged_final.json'
+    temp_file_path = 'data/merged_final_temp.json'
+    
+    print(f"Loading data from {file_path}...")
+    with open(file_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        
+    print("Converting numbers...")
+    for item in data:
+        if 'question' in item:
+            item['question'] = convert_to_ckb_numbers(item['question'])
+        if 'response' in item:
+            item['response'] = convert_to_ckb_numbers(item['response'])
+            
+    print(f"Saving data to {file_path}...")
+    with open(temp_file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        
+    os.replace(temp_file_path, file_path)
+    print("Done!")
+
+if __name__ == '__main__':
+    main()
+\end{lstlisting}
+
+
+\section{Dataset Merger} \label{sec:merger}
+\textbf{Purpose:} Sometimes the dataset is processed in separate large chunks. This script merges two independent dataset blocks, strips trailing whitespaces, discards items missing core keys, deduplicates based on Q\&A text, and reassigns sequential IDs.
+
+\begin{lstlisting}[style=pythoncode, caption={dataset\_merger.py}]
+import json
+import os
+
+def main():
+    p1 = 'data/merged_part1.json'
+    p2 = 'data/merged_part2.json'
+    out_path = 'data/merged_final.json'
+
+    print("Loading dataset 1...")
+    with open(p1, 'r', encoding='utf-8') as f:
+        d1 = json.load(f)
+    print(f"Loaded {len(d1)} items from {p1}")
+
+    print("Loading dataset 2...")
+    with open(p2, 'r', encoding='utf-8') as f:
+        d2 = json.load(f)
+    print(f"Loaded {len(d2)} items from {p2}")
+
+    merged_items = []
+    skipped_missing = 0
+    skipped_duplicates = 0
+    seen_pairs = set()
+
+    for idx, item in enumerate(d1 + d2):
+        # Validate keys
+        q = item.get('question')
+        r = item.get('response')
+        cat = item.get('category')
+
+        if not q or not r or not cat:
+            skipped_missing += 1
+            continue
+
+        q = q.strip()
+        r = r.strip()
+        cat = cat.strip()
+
+        if not q or not r or not cat:
+            skipped_missing += 1
+            continue
+
+        # Deduplicate
+        pair = (q, r)
+        if pair in seen_pairs:
+            skipped_duplicates += 1
+            continue
+
+        seen_pairs.add(pair)
+
+        # Create cleaned item with only core keys
+        cleaned_item = {
+            'id': str(len(merged_items) + 1),  # Sequential 1-based string ID
+            'category': cat,
+            'question': q,
+            'response': r
+        }
+        merged_items.append(cleaned_item)
+
+    print(f"Skipped {skipped_missing} items due to missing/empty question, response, or category.")
+    print(f"Skipped {skipped_duplicates} items as exact duplicates (same question and response).")
+    print(f"Total merged items: {len(merged_items)}")
+
+    print(f"Writing merged dataset to {out_path}...")
+    with open(out_path, 'w', encoding='utf-8') as f:
+        json.dump(merged_items, f, ensure_ascii=False, indent=2)
+
+    print("Successfully finished merging!")
+
+if __name__ == '__main__':
+    main()
+\end{lstlisting}
+
+
+\section{Batch JSON Merger} \label{sec:batchmerger}
+\textbf{Purpose:} After collecting multiple individual JSON files into one folder (via the JSON Collector), this tool loads all of them in a batch process, drops unnecessary document metadata keys, and consolidates all records into one master array.
+
+\begin{lstlisting}[style=pythoncode, caption={batch\_merger.py}]
+import os
+import json
+import sys
+
+def merge_and_clean(source_dir, output_file):
+    merged_data = []
+    
+    # List all JSON files in the directory
+    files = sorted([f for f in os.listdir(source_dir) if f.endswith('.json')])
+    total_files = len(files)
+    
+    print(f"Found {total_files} JSON files in '{source_dir}'. Merging...")
+    
+    for idx, filename in enumerate(files, 1):
+        file_path = os.path.join(source_dir, filename)
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            # Process content, handling lists and individual dictionaries
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        item.pop('document', None)
+                    merged_data.append(item)
+            elif isinstance(data, dict):
+                data.pop('document', None)
+                merged_data.append(data)
+            else:
+                print(f"Warning: Unexpected data structure in {filename}: {type(data)}")
+                
+        except Exception as e:
+            print(f"Error reading {filename}: {e}")
+            
+        if idx % 500 == 0 or idx == total_files:
+            print(f"Processed {idx}/{total_files} files...")
+            
+    print(f"Writing merged data to {output_file}...")
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(merged_data, f, ensure_ascii=False, indent=2)
+        
+    print(f"Successfully merged {total_files} files into {output_file}.")
+    print(f"Total items in merged file: {len(merged_data)}")
+
+if __name__ == '__main__':
+    source_dir = sys.argv[1] if len(sys.argv) > 1 else 'data/all_final_jsons'
+    output_file = sys.argv[2] if len(sys.argv) > 2 else 'data/merged_final.json'
+    merge_and_clean(source_dir, output_file)
+\end{lstlisting}
+
+
+\section{Category Translator} \label{sec:translator}
+\textbf{Purpose:} We use this tool to iteratively translate the non-English categories found in the dataset. It detects the language script, uses batching to avoid API limits, and attempts to resolve categories down to unique English terms.
+
+\begin{lstlisting}[style=pythoncode, caption={translate\_categories.py}]
+import json
+import re
+import time
+import os
+from deep_translator import GoogleTranslator
+
+# Paths
+json_path = "data/merged_final.json"
+temp_json_path = "data/merged_final_temp.json"
+artifact_dir = "artifacts"
+artifact_path = os.path.join(artifact_dir, "category_translations.md")
+
+os.makedirs(artifact_dir, exist_ok=True)
+
+# Regex to detect Arabic script
+arabic_script_regex = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]')
+
+def clean_translation(original, translated):
+    translated = translated.strip()
+    
+    # 1. Deduplicate slash terms
+    if '/' in translated:
+        parts = [p.strip() for p in translated.split('/')]
+        parts = [p for p in parts if p]
+        seen = []
+        for p in parts:
+            if p.lower() not in [s.lower() for s in seen]:
+                seen.append(p)
+        translated = ' / '.join(seen)
+        
+    # 2. Deduplicate parentheses
+    match = re.match(r'^([^(]+)\s*\(([^)]+)\)$', translated)
+    if match:
+        p1 = match.group(1).strip()
+        p2 = match.group(2).strip()
+        if p1.lower() == p2.lower():
+            translated = p1
+            
+    # 3. Clean up trailing/leading symbols
+    translated = translated.strip(" /()[]{}")
+    return translated
+
+print("Loading dataset...")
+with open(json_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+# Count frequencies and separate categories
+categories_count = {}
+for item in data:
+    cat = item.get("category")
+    if cat is not None:
+        categories_count[cat] = categories_count.get(cat, 0) + 1
+
+target_cats = [cat for cat in categories_count.keys() if arabic_script_regex.search(cat)]
+print(f"Total unique categories: {len(categories_count)}")
+print(f"Categories to translate: {len(target_cats)}")
+
+translator = GoogleTranslator(source='auto', target='en')
+translation_mapping = {}
+batch_size = 50
+total_batches = (len(target_cats) + batch_size - 1) // batch_size
+
+for b_idx in range(total_batches):
+    start = b_idx * batch_size
+    end = min(start + batch_size, len(target_cats))
+    batch = target_cats[start:end]
+    
+    text = '\n'.join(batch)
+    translated_lines = []
+    try:
+        translated_text = translator.translate(text)
+        translated_lines = [line.strip() for line in translated_text.split('\n')]
+    except Exception as e:
+        print(f"Batch {b_idx+1} translation error. Falling back to individual translation.")
+        
+    if len(translated_lines) == len(batch):
+        for orig, trans in zip(batch, translated_lines):
+            translation_mapping[orig] = clean_translation(orig, trans)
+    else:
+        for item in batch:
+            try:
+                trans = translator.translate(item)
+                translation_mapping[item] = clean_translation(item, trans)
+            except Exception:
+                translation_mapping[item] = item
+                
+    time.sleep(0.5)
+
+# Update categories in data
+updated_count = 0
+for item in data:
+    cat = item.get("category")
+    if cat in translation_mapping:
+        item["category"] = translation_mapping[cat]
+        updated_count += 1
+
+print(f"Updated {updated_count} items in the dataset.")
+
+with open(temp_json_path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+
+os.replace(temp_json_path, json_path)
+
+with open(artifact_path, 'w', encoding='utf-8') as f:
+    f.write("# Category Translation Mapping\n\n")
+    f.write(f"Total items in dataset: {len(data)}\\\n")
+    f.write("| Original Category | Translated Category | Occurrences |\n")
+    f.write("| --- | --- | --- |\n")
+    sorted_target = sorted(target_cats, key=lambda x: categories_count[x], reverse=True)
+    for orig in sorted_target:
+        trans = translation_mapping[orig]
+        count = categories_count[orig]
+        f.write(f"| {orig.replace('|', '\\|')} | {trans.replace('|', '\\|')} | {count} |\n")
+
+print("Artifact written successfully.")
+\end{lstlisting}
+
+
+\section{Artifact Cleaner} \label{sec:artifactcleaner}
+\textbf{Purpose:} We use this tool to refine the category translations generated by the translator script. It corrects known discrepancies, merges duplicates, and enforces formatting on the generated markdown artifact to ensure data scientists have an accurate reference sheet.
+
+\begin{lstlisting}[style=pythoncode, caption={clean\_artifact.py}]
+import os
+import re
+
+artifact_path = "artifacts/category_translations.md"
+
+category_map = {
+    'Politics (Siyasət - Politics': 'Politics',
+    'Linguistics (Zimanzanî - Linguistics': 'Linguistics',
+    'Health (Têndrostî - Health': 'Health',
+    'Linguistics / اللغويات': 'Linguistics',
+    'Social (Komelayetî': 'Social',
+    'Economy (Abûrî - Economy': 'Economy',
+    'History / التاریخ': 'History',
+    'Zimanşinasî (Linguistics)': 'Linguistics'
+}
+
+with open(artifact_path, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+new_lines = []
+updated_count = 0
+
+for line in lines:
+    if line.startswith("|") and not line.startswith("| ---") and not "Original Category" in line:
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 4:
+            orig = parts[1]
+            trans = parts[2]
+            count = parts[3]
+            
+            orig_unescaped = orig.replace('\\|', '|')
+            trans_unescaped = trans.replace('\\|', '|')
+            
+            matched = False
+            for k_key, e_val in category_map.items():
+                if (k_key in orig_unescaped) or (k_key in trans_unescaped) or (orig_unescaped in k_key):
+                    trans_unescaped = e_val
+                    matched = True
+                    break
+            
+            english_pattern = re.compile(r"^[a-zA-Z0-9\s\/\(\)\-\.,&:\?!_']*$")
+            if not english_pattern.match(trans_unescaped):
+                paren_match = re.search(r'\(([^)]+)\)', orig_unescaped)
+                if paren_match:
+                    trans_unescaped = paren_match.group(1).strip()
+                    matched = True
+            
+            if matched:
+                updated_count += 1
+                
+            orig_escaped = orig_unescaped.replace('|', '\\|')
+            trans_escaped = trans_unescaped.replace('|', '\\|')
+            new_lines.append(f"| {orig_escaped} | {trans_escaped} | {count} |\n")
+        else:
+            new_lines.append(line)
+    else:
+        new_lines.append(line)
+
+with open(artifact_path, 'w', encoding='utf-8') as f:
+    f.writelines(new_lines)
+
+print(f"Artifact table updated successfully. Cleaned {updated_count} rows.")
+\end{lstlisting}
+
+
+\section{Category Sanitizer} \label{sec:sanitizer}
+\textbf{Purpose:} This script guarantees standard structural integrity for category values across datasets. It enforces standard spaces, replaces typographic quotes, fixes trailing separators, and systematically prevents format divergence.
+
+\begin{lstlisting}[style=pythoncode, caption={sanitize\_categories.py}]
+import json
+import os
+import re
+
+artifact_path = "artifacts/category_translations.md"
+json_paths = [
+    "data/merged_final.json",
+    "data/merged_final_output.json"
+]
+
+manual_fixes = {
+    'Geography / Géographie': 'Geography',
+    'Pოლიtik and Daily Affairs': 'Politics and Daily Affairs',
+    'Religious Practice (ʿIbādah)': 'Religious Practice (Ibadah)'
+}
+
+def clean_value(val):
+    if not val:
+        return ""
+    val = re.sub(r'\s+', ' ', val).strip()
+    if val in manual_fixes:
+        val = manual_fixes[val]
+    val = val.replace('’', "'").replace('‘', "'").replace('`', "'").replace('´', "'")
+    val = val.replace('“', '"').replace('”', '"')
+    val = re.sub(r'\s*/\s*', ' / ', val)
+    val = re.sub(r'\s*-\s*', ' - ', val)
+    return val
+
+for path in json_paths:
+    if os.path.exists(path):
+        print(f"Cleaning JSON dataset: {path}")
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        modified_count = 0
+        for item in data:
+            orig = item.get("category", "")
+            cleaned = clean_value(orig)
+            if orig != cleaned:
+                item["category"] = cleaned
+                modified_count += 1
+                
+        print(f"Standardized {modified_count} records in {os.path.basename(path)}.")
+        
+        temp_path = path + ".tmp"
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        os.replace(temp_path, path)
+
+if os.path.exists(artifact_path):
+    print(f"Cleaning translation report: {artifact_path}")
+    with open(artifact_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+        
+    new_lines = []
+    for line in lines:
+        if line.startswith("|") and not line.startswith("| ---") and not "Original Category" in line:
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) >= 4:
+                orig = parts[1]
+                trans = parts[2]
+                count = parts[3]
+                cleaned_trans = clean_value(trans)
+                new_lines.append(f"| {orig} | {cleaned_trans} | {count} |\n")
+            else:
+                new_lines.append(line)
+        else:
+            new_lines.append(line)
+            
+    with open(artifact_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+    print("Report file cleaned successfully.")
+\end{lstlisting}
+
+
+\section{Advanced Offline Translator} \label{sec:advancedtranslator}
+\textbf{Purpose:} We use this robust translation mechanism for handling complex compound categories from heavily unstandardized texts. It uses offline decomposition, word dictionaries, and high-concurrency API fallbacks. This ensures minimal data loss and maximal standardization on massive multi-source datasets.
+
+\begin{lstlisting}[style=pythoncode, caption={advanced\_translator.py}]
+import os
+import json
+import re
+import time
+from deep_translator import GoogleTranslator
+from concurrent.futures import ThreadPoolExecutor
+
+artifact_path = "artifacts/category_translations.md"
+untranslated_json = "data/merged_final_untranslated.json"
+output_json = "data/merged_final.json"
+temp_output_json = "data/merged_final_temp.json"
+
+def normalize_string(s):
+    if not s:
+        return ""
+    s = s.replace("\u064a", "\u06cc").replace("\u0649", "\u06cc")
+    s = s.replace("\u0643", "\u06a9")
+    s = s.replace("\u200c", "").replace("\u200b", "")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def clean_term(t):
+    return re.sub(r"\(.*?\)", "", normalize_string(t)).strip()
+
+existing_mappings = {}
+if os.path.exists(artifact_path):
+    with open(artifact_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("|") and not line.startswith("| ---") and not "Original Category" in line:
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) >= 4:
+                    orig = parts[1].replace("\\|", "|")
+                    trans = parts[2].replace("\\|", "|")
+                    existing_mappings[normalize_string(orig)] = trans
+
+roots = {
+    "ئابوری": "Economy", "تەندروستی": "Health", "سیاسەت": "Politics", "مێژوو": "History",
+    "کۆمەڵایەتی": "Social", "فەرهەنگ": "Culture", "ئەدەب": "Literature", "زانست": "Science",
+    "وەرزش": "Sports", "مافی مرۆڤ": "Human Rights", "زمان": "Linguistics"
+}
+word_mapping = {normalize_string(k): v for k, v in roots.items()}
+
+def is_pure_english(text):
+    return bool(re.match(r"^[a-zA-Z0-9\s\/\(\)\-\.,&:\?!_'\''’]*$", text))
+
+def standardize_english_category(cat):
+    if not cat: return ""
+    cat = re.sub(r"\s+", " ", cat.strip("`'\"“”‘’"))
+    words = cat.split()
+    capitalized_words = [w.capitalize() if idx == 0 or w.lower() not in {"and","or","of","in","the"} else w.lower() for idx, w in enumerate(words)]
+    return " ".join(capitalized_words).strip(" -/&")
+
+with open(untranslated_json, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+unique_cats_counts = {}
+for item in data:
+    cat = item.get("category", "")
+    if cat:
+        unique_cats_counts[cat] = unique_cats_counts.get(cat, 0) + 1
+
+resolved_mappings = {}
+unresolved_cats = []
+
+for cat in unique_cats_counts.keys():
+    cat_norm = normalize_string(cat)
+    if is_pure_english(cat):
+        resolved_mappings[cat] = standardize_english_category(cat)
+    elif cat_norm in existing_mappings:
+        resolved_mappings[cat] = standardize_english_category(existing_mappings[cat_norm])
+    else:
+        unresolved_cats.append(cat)
+
+translator = GoogleTranslator(source="auto", target="en")
+
+def translate_item(orig):
+    src = re.sub(r"\(.*?\)", "", orig).strip("<> -/|")
+    if not src: src = orig
+    for _ in range(3):
+        try:
+            trans = translator.translate(src)
+            return orig, standardize_english_category(trans)
+        except Exception:
+            time.sleep(1)
+    return orig, standardize_english_category(orig)
+
+if unresolved_cats:
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = list(executor.map(translate_item, unresolved_cats))
+    for orig, trans in results:
+        resolved_mappings[orig] = trans
+
+for item in data:
+    cat = item.get("category", "")
+    if cat in resolved_mappings:
+        item["category"] = resolved_mappings[cat]
+
+with open(temp_output_json, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=4)
+os.replace(temp_output_json, output_json)
+\end{lstlisting}
+
+
+\section{Category Analyzer} \label{sec:analyzer}
+\textbf{Purpose:} Analyzes the proportion of English versus non-English categories across the entire corpus, generating a detailed report to help researchers understand the complexity of the dataset's language distribution.
+
+\begin{lstlisting}[style=pythoncode, caption={analyze\_categories.py}]
+import json
+import re
+
+file_path = "data/merged_final.json"
+
+# Arabic/Kurdish script character range
+arabic_script_regex = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]')
+
+with open(file_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+# Count and unique categories
+categories_count = {}
+for item in data:
+    cat = item.get("category")
+    if cat is not None:
+        categories_count[cat] = categories_count.get(cat, 0) + 1
+
+kurdish_categories = []
+english_categories = []
+
+for cat, count in categories_count.items():
+    if arabic_script_regex.search(cat):
+        kurdish_categories.append((cat, count))
+    else:
+        english_categories.append((cat, count))
+
+print(f"Total items in JSON: {len(data)}")
+print(f"Total unique categories: {len(categories_count)}")
+print(f"Kurdish/mixed categories count: {len(kurdish_categories)}")
+print(f"English-only categories count: {len(english_categories)}")
+
+print("\n--- SAMPLE ENGLISH CATEGORIES ---")
+for cat, count in sorted(english_categories, key=lambda x: x[1], reverse=True)[:20]:
+    print(f"  {cat}: {count}")
+
+print("\n--- ALL KURDISH/MIXED CATEGORIES ---")
+for cat, count in sorted(kurdish_categories, key=lambda x: x[1], reverse=True):
+    print(f"  {cat}: {count}")
+\end{lstlisting}
+
+
+\section{Category Cleaner} \label{sec:catcleaner}
+\textbf{Purpose:} A targeted cleaning script that uses a strictly defined manual mapping dictionary to resolve remaining non-English categories directly in the JSON file without external API calls, ensuring standard formatting.
+
+\begin{lstlisting}[style=pythoncode, caption={clean\_categories\_final.py}]
+import json
+import os
+import re
+
+json_path = "data/merged_final.json"
+temp_json_path = "data/merged_final_temp.json"
+
+# Manual mapping dictionary for all remaining non-English categories
+category_map = {
+    'دین (Religion': 'Religion',
+    'دینی (Religion': 'Religion',
+    'تاریخ (History': 'History',
+    'دینی (Religious': 'Religious',
+    'Politics (Siyasət': 'Politics',
+    'شعر (Poetry': 'Poetry',
+    'Dîn (Religion)': 'Religion',
+    'ڕووداو': 'Event',
+    'Politics (Siyasət - Politics': 'Politics',
+    'زمان (Linguistics': 'Linguistics',
+    'قانون (Law': 'Law',
+    'Linguistics (Zimananasî': 'Linguistics',
+    'بیۆگرافی': 'Biography',
+    'گەردوونناسی': 'Astronomy',
+    'Fərhəngnigarî (Lexicography)': 'Lexicography',
+    'Linguistics (Zimanzanî - Linguistics': 'Linguistics',
+    'Linguistics (Zimanşinasi - Linguistics': 'Linguistics',
+    'Dînî (Religion)': 'Religion',
+    'Dîrok (History)': 'History',
+    'Health (Têndrostî - Health': 'Health',
+    'Linguistics (Zamanaşinî - Linguistics': 'Linguistics',
+    'فەلسەفە / سووفیزم': 'Philosophy / Sufism',
+    'تاریخ و فرهنگ': 'History and Culture',
+    'تاریخ (Mێژوو': 'History',
+    'ئه\u200cده\u200cب و ڕه\u200cخنه': 'Literature and Criticism',
+    'Zimanşînasi (Linguistics)': 'Linguistics',
+    'ئەخلاق (Ethics': 'Ethics',
+    'سیاسەت (Siyasat': 'Politics',
+    'مێژوو (Mêjîstû': 'History',
+    'سۆفیگەری': 'Sufism',
+    'مێژووی ئێران': 'History of Iran',
+    'History (Mêjû - History': 'History',
+    'Linguistics / اللغويات': 'Linguistics',
+    'Felsefe/Zimanşînasi': 'Philosophy / Linguistics',
+    'History (Mêjû) / History': 'History',
+    'جناح (Cenah': 'Faction',
+    'ئەدەب و شیعری': 'Literature and Poetry',
+    'اجتماعی': 'Social',
+    'History (Mêjû': 'History',
+    'Social (Komelayetî': 'Social',
+    'Economy (Abûrî': 'Economy',
+    'Economy (Abûrî - Economy': 'Economy',
+    'History / التاریخ': 'History',
+    'Philosophy (Felsəfə': 'Philosophy',
+    'Zimanşînasi': 'Linguistics',
+    'Zimanşînasi/Felsefe': 'Linguistics / Philosophy',
+    'Zimanşinasî (Linguistics)': 'Linguistics',
+    'پزیشکی / Medical': 'Medical',
+    'سیاسی / Political': 'Political',
+    'یاسا و دادوەری (Law and Justice': 'Law and Justice',
+    'وەرزش (Sport': 'Sports',
+    'ادبی': 'Literature',
+    'مێژووی (History': 'History',
+    'حەدیس (Hadith': 'Hadith',
+    'زمانی (زمان': 'Linguistics',
+    'ئاداب و ئەدەب': 'Literature',
+    'کۆمه\u200cڵایهتی': 'Social',
+    'Adab (Edəb - Literature': 'Literature',
+    'Literature (Edəb': 'Literature',
+    'Personal Experience (Azmûni Şexsî - Personal Experience': 'Personal Experience',
+    'History (Mēzhū - History': 'History',
+    'Economy (Abūrī - Economy': 'Economy',
+    'Literature (Edêb - Literature': 'Literature',
+    'History (Mêjhu - History': 'History',
+    'War and War (Ceng u Şer': 'War and War',
+    'International Relations (Peywendiyên Nêwdewletiyan': 'International Relations',
+    'History and Society (Mêjû u Komelayetî': 'History and Society',
+    'Kultūr (Culture)': 'Culture',
+    'فەرھەنگی دەستەواژەکان (Idioms and Expressions': 'Idioms and Expressions',
+    'Hunər (Art)': 'Art',
+    'Colтура / Culture': 'Culture'
+}
+
+print("Loading dataset...")
+with open(json_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+updated_count = 0
+for item in data:
+    cat = item.get("category")
+    if cat in category_map:
+        item["category"] = category_map[cat]
+        updated_count += 1
+
+print(f"Successfully updated {updated_count} records in the dataset.")
+
+english_pattern = re.compile(r"^[a-zA-Z0-9\s\/\(\)\-\.,&:\?!_']*$")
+remaining_non_english = []
+for item in data:
+    cat = item.get("category", "")
+    if cat and not english_pattern.match(cat):
+        remaining_non_english.append(cat)
+
+print(f"Remaining non-English categories after clean: {len(set(remaining_non_english))}")
+if remaining_non_english:
+    print("Values:", set(remaining_non_english))
+
+with open(temp_json_path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+
+os.replace(temp_json_path, json_path)
+print("Dataset overwritten and updated successfully.")
+\end{lstlisting}
+
+
+\section{Category Counter} \label{sec:counter}
+\textbf{Purpose:} A lightweight script to count unique categories and identify non-English entries requiring translation.
+
+\begin{lstlisting}[style=pythoncode, caption={count\_unique\_categories.py}]
+import json
+import re
+
+file_path = "data/merged_final.json"
+arabic_script_regex = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]')
+
+with open(file_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+unique_cats = set()
+kurdish_cats = set()
+
+for item in data:
+    cat = item.get("category")
+    if cat is not None:
+        unique_cats.add(cat)
+        if arabic_script_regex.search(cat):
+            kurdish_cats.add(cat)
+
+print(f"Total items: {len(data)}")
+print(f"Unique categories: {len(unique_cats)}")
+print(f"Kurdish categories to translate: {len(kurdish_cats)}")
+\end{lstlisting}
+
+
+\section{JSON Inspector} \label{sec:inspector}
+\textbf{Purpose:} Deeply inspects the JSON structure of the dataset to verify schemas and formatting.
+
+\begin{lstlisting}[style=pythoncode, caption={inspect\_json.py}]
+import json
+
+file_path = "data/merged_final.json"
+
+with open(file_path, 'r', encoding='utf-8') as f:
+    try:
+        data = json.load(f)
+        print("Type of data:", type(data))
+        if isinstance(data, list):
+            print("Length of list:", len(data))
+            if len(data) > 0:
+                print("First item keys:", data[0].keys())
+                print("First item sample:", json.dumps(data[0], indent=2, ensure_ascii=False))
+                
+                categories = set()
+                for item in data:
+                    cat = item.get("category")
+                    if cat is not None:
+                        categories.add(str(cat))
+                print("\nUnique categories found:", categories)
+        elif isinstance(data, dict):
+            print("Keys:", list(data.keys()))
+            for k in list(data.keys())[:5]:
+                print(f"Key: {k}, type of val: {type(data[k])}")
+                if isinstance(data[k], dict):
+                    print("Val keys:", data[k].keys())
+    except Exception as e:
+        print("Error reading json:", e)
+\end{lstlisting}
+
+
+\section{Remaining Inspector} \label{sec:remaininspector}
+\textbf{Purpose:} Focuses specifically on inspecting categories that failed automated translations, returning frequencies.
+
+\begin{lstlisting}[style=pythoncode, caption={inspect\_remaining.py}]
+import json
+import re
+
+json_path = "data/merged_final.json"
+
+with open(json_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+cat_counts = {}
+for item in data:
+    cat = item.get("category", "")
+    if cat:
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+english_pattern = re.compile(r'^[a-zA-Z0-9\s\/\(\)\-\.,&:\?!_]*$')
+
+non_english_cats = {}
+for cat, count in cat_counts.items():
+    if not english_pattern.match(cat):
+        non_english_cats[cat] = count
+
+print(f"Total non-English categories found: {len(non_english_cats)}")
+print("\nList of categories and counts:")
+for cat, count in sorted(non_english_cats.items(), key=lambda x: x[1], reverse=True):
+    print(f"  {cat!r}: {count}")
+\end{lstlisting}
+
+
+\section{Fallback Translator} \label{sec:fallbacktranslator}
+\textbf{Purpose:} Provides a secondary translation layer targeting only the most resistant non-English categories.
+
+\begin{lstlisting}[style=pythoncode, caption={translate\_remaining.py}]
+import json
+import re
+import time
+from deep_translator import GoogleTranslator
+
+json_path = "data/merged_final.json"
+
+with open(json_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+
+cat_counts = {}
+for item in data:
+    cat = item.get("category", "")
+    if cat:
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+english_pattern = re.compile(r"^[a-zA-Z0-9\s\/\(\)\-\.,&:\?!_']*$")
+
+non_english_cats = []
+for cat in cat_counts.keys():
+    if not english_pattern.match(cat):
+        non_english_cats.append(cat)
+
+print(f"Found {len(non_english_cats)} categories to translate/clean.")
+
+def clean_translation(original, translated):
+    translated = translated.strip()
+    if '/' in translated:
+        parts = [p.strip() for p in translated.split('/')]
+        parts = [p for p in parts if p]
+        seen = []
+        for p in parts:
+            if p.lower() not in [s.lower() for s in seen]:
+                seen.append(p)
+        translated = ' / '.join(seen)
+        
+    match = re.match(r'^([^(]+)\s*\(([^)]+)\)$', translated)
+    if match:
+        p1 = match.group(1).strip()
+        p2 = match.group(2).strip()
+        if p1.lower() == p2.lower():
+            translated = p1
+            
+    translated = translated.strip(" /()[]{}")
+    return translated
+
+translator = GoogleTranslator(source='auto', target='en')
+mapping = {}
+
+for cat in non_english_cats:
+    try:
+        translated = translator.translate(cat)
+        cleaned = clean_translation(cat, translated)
+        mapping[cat] = cleaned
+        print(f"{cat!r} -> {cleaned!r}")
+        time.sleep(0.2)
+    except Exception as e:
+        print(f"Error for {cat!r}: {e}")
+        mapping[cat] = cat
+\end{lstlisting}
+
+
+\section{Artifact Updater} \label{sec:updater}
+\textbf{Purpose:} A supplementary tool designed to patch the translation markdown artifacts with specific fallback mappings.
+
+\begin{lstlisting}[style=pythoncode, caption={update\_artifact.py}]
+import os
+import re
+
+artifact_path = "artifacts/category_translations.md"
+
+category_map = {
+    'دین (Religion': 'Religion',
+    'دینی (Religion': 'Religion',
+    'تاریخ (History': 'History',
+    'دینی (Religious': 'Religious',
+    'Politics (Siyasət': 'Politics',
+    'شعر (Poetry': 'Poetry',
+    'Dîn (Religion)': 'Religion',
+    'ڕووداو': 'Event',
+    'Politics (Siyasət - Politics': 'Politics',
+    'زمان (Linguistics': 'Linguistics',
+    'قانون (Law': 'Law',
+    'Linguistics (Zimananasî': 'Linguistics',
+    'بیۆگرافی': 'Biography',
+    'گەردوونناسی': 'Astronomy',
+    'Fərhəngnigarî (Lexicography)': 'Lexicography',
+    'Linguistics (Zimanzanî - Linguistics': 'Linguistics',
+    'Linguistics (Zimanşinasi - Linguistics': 'Linguistics',
+    'Dînî (Religion)': 'Religion',
+    'Dîrok (History)': 'History',
+    'Health (Têndrostî - Health': 'Health',
+    'Linguistics (Zamanaşinî - Linguistics': 'Linguistics',
+    'فەلسەفە / سووفیزم': 'Philosophy / Sufism',
+    'تاریخ و فرهنگ': 'History and Culture',
+    'تاریخ (Mێژوو': 'History',
+    'ئه\u200cده\u200cب و ڕه\u200cخنه': 'Literature and Criticism',
+    'Zimanşînasi (Linguistics)': 'Linguistics',
+    'ئەخلاق (Ethics': 'Ethics',
+    'سیاسەت (Siyasat': 'Politics',
+    'مێژوو (Mêjîstû': 'History',
+    'سۆفیگەری': 'Sufism',
+    'مێژووی ئێران': 'History of Iran',
+    'History (Mêjû - History': 'History',
+    'Linguistics / اللغويات': 'Linguistics',
+    'Felsefe/Zimanşînasi': 'Philosophy / Linguistics',
+    'History (Mêjû) / History': 'History',
+    'جناح (Cenah': 'Faction',
+    'ئەدەب و شیعری': 'Literature and Poetry',
+    'اجتماعی': 'Social',
+    'History (Mêjû': 'History',
+    'Social (Komelayetî': 'Social',
+    'Economy (Abûrî': 'Economy',
+    'Economy (Abûrî - Economy': 'Economy',
+    'History / التاریخ': 'History',
+    'Philosophy (Felsəfə': 'Philosophy',
+    'Zimanşînasi': 'Linguistics',
+    'Zimanşînasi/Felsefe': 'Linguistics / Philosophy',
+    'Zimanşinasî (Linguistics)': 'Linguistics',
+    'پزیشکی / Medical': 'Medical',
+    'سیاسی / Political': 'Political',
+    'یاسا و دادوەری (Law and Justice': 'Law and Justice',
+    'وەرزش (Sport': 'Sports',
+    'ادبی': 'Literature',
+    'مێژووی (History': 'History',
+    'حەدیس (Hadith': 'Hadith',
+    'زمانی (زمان': 'Linguistics',
+    'ئاداب و ئەدەب': 'Literature',
+    'کۆمه\u200cڵایهتی': 'Social',
+    'Adab (Edəb - Literature': 'Literature',
+    'Literature (Edəb': 'Literature',
+    'Personal Experience (Azmûni Şexsî - Personal Experience': 'Personal Experience',
+    'History (Mēzhū - History': 'History',
+    'Economy (Abūrī - Economy': 'Economy',
+    'Literature (Edêb - Literature': 'Literature',
+    'History (Mêjhu - History': 'History',
+    'War and War (Ceng u Şer': 'War and War',
+    'International Relations (Peywendiyên Nêwdewletiyan': 'International Relations',
+    'History and Society (Mêjû u Komelayetî': 'History and Society',
+    'Kultūr (Culture)': 'Culture',
+    'فەرھەنگی دەستەواژەکان (Idioms and Expressions': 'Idioms and Expressions',
+    'Hunər (Art)': 'Art',
+    'Colтура / Culture': 'Culture'
+}
+
+with open(artifact_path, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+new_lines = []
+for line in lines:
+    if line.startswith("|") and not line.startswith("| ---") and not "Original Kurdish Category" in line:
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 4:
+            orig = parts[1]
+            trans = parts[2]
+            count = parts[3]
+            
+            orig_unescaped = orig.replace('\\|', '|')
+            if orig_unescaped in category_map:
+                trans = category_map[orig_unescaped]
+            
+            orig_escaped = orig_unescaped.replace('|', '\\|')
+            trans_escaped = trans.replace('|', '\\|')
+            new_lines.append(f"| {orig_escaped} | {trans_escaped} | {count} |\n")
+        else:
+            new_lines.append(line)
+    else:
+        new_lines.append(line)
+
+with open(artifact_path, 'w', encoding='utf-8') as f:
+    f.writelines(new_lines)
+
+print("Artifact file updated successfully.")
+\end{lstlisting}
+
+\end{document}
